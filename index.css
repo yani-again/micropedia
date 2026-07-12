@@ -1,0 +1,94 @@
+:root {
+    --link-color: #3056a9;
+    --italic-color: #001265dd;
+    --bold-color: #2f2f2f;
+    --border-color: #00000033;
+
+    --gray: #dddddd;
+
+    --warn: #ba1323;
+    --warn-bg: #dc35452f;
+}
+
+.underline, h1, h2 {
+    border-bottom: 1px solid var(--border-color);
+}
+h1 {
+    margin-bottom: 1ch;
+}
+h2, h3, h4, h5 {
+    margin-top: 1ch;
+}
+
+body {
+    font-family: sans-serif;
+    font-size: 1.05em;
+    width: 85vw;
+    margin: 0 auto;
+}
+
+header {
+    width: 100%;
+    margin: 30px 0;
+    display: flex;
+    align-items: center;
+    gap: 42px;
+}
+header img {
+    height: 2em;
+}
+header form input {
+    padding-right: 0.3em;
+    padding-left: 0.3em;
+    border: 1px solid var(--border-color);
+}
+header form button {
+    background: none;
+    border: 1px solid var(--border-color);
+    border-left: none;
+    cursor: pointer;
+    padding-right: 0.5em;
+    padding-left: 0.5em;
+    transition: background-color 100ms ease-in-out;
+}
+header form input, header form button {
+    padding-bottom: 0.2em;
+    padding-top: 0.2em;
+}
+
+header form button:hover {
+    background-color: var(--gray);
+}
+
+p {
+    margin-top: 1.4ch;
+}
+
+.warn {
+    color: var(--warn) !important;
+}
+
+#sources {
+    margin-top: 15px;
+}
+#sources a {
+    display: block;
+}
+
+.link-list > a {
+    display: block;
+}
+
+p > code, span > code, ul > code, ol > code, li > code, h1 > code, h2 > code, h3 > code, h4 > code {
+    padding: 1px 4px;
+    border-radius: 5px;
+    color: var(--darkgreen);
+    background-color: var(--lightgray);
+    border: 1px solid var(--gray);
+}
+pre {
+    padding: 10px 15px;
+    border-radius: 15px;
+    background-color: var(--gray);
+    border: 1px solid var(--darkgray);
+}

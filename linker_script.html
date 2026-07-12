@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta http-equiv="X-UA-Compatible" content="ie=edge">
+        <title>STM32 Linker Script (From Scratch) - MicroPedia</title>
+        <link rel="stylesheet" href="./reset.css">
+        <link rel="stylesheet" href="./style.css">
+        <link rel="icon" href="./favicon.ico" type="image/x-icon">
+    </head>
+    <body>
+        <header>
+            <img src="assets/ucpedia logo.png" alt="logo">
+            <form action="search.html">
+                <input name="search" id="search" type="text" placeholder="Search articles"><!--
+                --><button id="search-button">search</button>
+            </form>
+        </header>
+
+        <div id="disclaimer" class="display-none">
+            <span class="exit" onClick="hide_disclaimer()">x</span>
+            <h3>SOME NOTES!</h3>
+            <ol>
+                <li>This website exclusively focuses on STM32 microcontrollers. If you are using something else, take this information with a grain of salt. If you are using something with a Cortex-M processor, there is still valuable information you can extract, though not every article will be applicable to a non-STM32 microcontroller.</li>
+                <li>I'm a university student and this site is my passive personal project. I collect my notes as I learn bare-metal embedded programming, then I tidy and upload them here. Being in the learning phase, there are likely a bunch of mistakes around the site. If you spot any, <a href="https://github.com/yani-again" target="_blank">please let me know!</a></li>
+            </ol>
+            <p>More information on the <a href="https://ucpedia.com/">main page!</a></p>
+        </div>
+
+        <div id="main">
+            <div id="contents">
+                <h4 class="underline">Contents</h4>
+                <div></div>
+            </div>
+
+            <main>
+<h1>STM32 Linker Script (From Scratch)</h1>
+<h2>Foreword</h2>
+<p>The linker script is</p>
+<p>When you hit &quot;build&quot; on something like STM32CubeIDE, something called a <strong>linker</strong> runs at some point in that process.</p>
+<p>Its role is to take your code <em>(more specifically, a generated object file, such as an <code>.elf</code> file)</em> and map it onto the target device in a way that fits the specific hardware.</p>
+<h2>A Raspberry Pi Example</h2>
+<p>The clearest way I can think to explain its use is through an experience I had flashing the RP2040 with my firmware (bare-metal project, no SDK).</p>
+<p>The way that MCU works is, it expects the first 256 bytes of code it reads from flash to be structured like this:</p>
+<ul>
+<li>252 bytes of code <em>(generally this should set up something called XIP with the external flash - but that's for another article)</em></li>
+<li>4 bytes for CRC32 error checking <em>(again, this needs another article at some point...)</em></li>
+</ul>
+<p>Generally, there's no way to really guarantee that your compiled code will have the first 256 bytes set up like that. Luckily, as you can already guess, a linker script fixes that and it's exactly what it's used for.</p>
+<h2>Memory Layout (<code>MEMORY()</code>)</h2>
+<p>Generally, on ARM Cortex-M chips, the memory is structured like this:</p>
+<ul>
+<li><code>0x08000000 - 0x080X0000</code>: flash memory*</li>
+<li><code>0x1FFFX000 - 0x1FFFX000</code>: system memory (the bootloader)*</li>
+<li><code>0x20000000 - 0x3FFFFFFF</code>: SRAM</li>
+<li><code>0x40000000 - 0x5FFFFFFF</code>: peripherals
+<em>* <code>X</code> in these examples is hardware-specific, check your board's datasheet.</em></li>
+</ul>
+<p>Because these are hardware-specific, and SRAM/peripherals aren't always at those addresses on every type of CPU architecture, you can specify where each begins, as well as its size, in the linker script:</p>
+<pre><code>MEMORY (
+    flash(rw) : ORIGIN = 0x08000000, LENGTH = 128K
+    sram(rwx) : ORIGIN = 0x20000000, LENGTH = 624K
+);
+</code></pre>
+<p>Note that <code>LENGTH</code> <strong>doesn't</strong> have to be accurate - you can claim to have less than you actually do, the rest will just remain unutilised. Just don't claim to have <em>more</em> than you actually do, that'll lead to undefined behaviour.</p>
+<p>You might also notice the <code>(rw)</code> and <code>(rwx)</code> parts of the code - that lets the linker know what it can do with that section of memory:</p>
+<ul>
+<li><code>r</code> means 'readable'</li>
+<li><code>w</code> means 'writeable'</li>
+<li><code>x</code> means 'executeable'</li>
+</ul>
+<p>And they don't actually enforce any kind of memory protection, they're just there for the linker to warn you if you try to, for example, place a writeable section in a memory region marked as only readable.</p>
+<h2>Entry Point (<code>ENTRY()</code>)</h2>
+<p>This is largely ceremonial on microcontrollers, or at least those powered by the Cortex-M like the STM32 family. It specifies where to start code execution from, and it looks like this:</p>
+<pre><code>ENTRY(_reset_handler);
+</code></pre>
+<p>The reason I say it's ceremonial is because Cortex-M chips always boot like this under normal conditions:</p>
+<ol>
+<li>Read <code>0x00000000</code> for initial stack pointer value</li>
+<li>Read <code>0x00000004</code> for reset handler function's address</li>
+<li>Jump to reset handler and begin code execution</li>
+</ol>
+<p>So <code>ENTRY()</code> doesn't influence where the CPU starts code execution from.</p>
+<p>What <strong>does</strong> get influenced, however, is the debugger. So for debugging purposes, the entry point is necessary.</p>
+<blockquote>
+<h4>Symbols</h4>
+<p>The part which reads <code>_reset_handler</code> inside of <code>ENTRY(_reset_handler)</code> is called a <em>symbol</em>.
+The linker script doesn't actually have a variable called <code>_reset_handler</code> - instead it is user-defined and ends up in the symbol table.
+More on this later</p>
+</blockquote>
+<h2>Symbols</h2>
+<p>This was the most confusing part of linker scripts for me because they <em>look</em> and <em>behave</em> like variables, but they are <strong>NOT</strong> variables.</p>
+<p>Take this as an example:</p>
+<pre><code>_estack = ORIGIN(sram) + LENGTH(sram);
+</code></pre>
+<p>This creates a symbol <em>(not variable)</em> called <code>_estack</code> (meaning end-of-stack, it's a user-defined name so you can call it anything), and the value inside it becomes the origin of RAM <em>(0x20000000)</em> plus the length of RAM <em>(624k)</em>, which is 0x20098580.</p>
+<p><code>_estack</code> can then be used inside of your source code:</p>
+<pre><code class="language-c">// declare it first
+extern uint32_t _estack;
+
+// then use it like this
+(uint32_t)&amp;_estack,
+</code></pre>
+<p>And here's the confusing part: addressing <code>&amp;_estack</code> will give you its address 0x20098580 which is what you want, <strong>NOT</strong> addressing it like <code>_estack</code> will give you the value stored at its address, which may or may not have something useful depending on your use case, in this case it will not.</p>
+<p>This is exactly the same as a normal variale: <code>uint32_t x = 5</code>. Here <code>_estack</code> corresponds to <code>x</code> - and addressing <code>&amp;x</code> will give you its address (e.g. 0x20001000), <strong>NOT</strong> addressing it will give you its value (in this case 5).</p>
+<p>It's so similar to a variable, that it even gets added to the symbol table and looked up whenever it's needed.</p>
+<p>The one distinction here is that a linker symbol is <strong>NOT</strong> a variable, so it reserves <strong>NO</strong> memory in order to exist. It's closer to a C macro <code>#define</code> in that sense, so it has no runtime overhead as it's resolved during the build process.</p>
+<p>I'm not sure why it confused me so much... But hey, making things easy-to-understand is the whole point of this website!</p>
+<h2>Data Sections (<code>SECTIONS{}</code>)</h2>
+<p>After making the linker aware of the hardware memory layout with <code>MEMORY{}</code>, we can now put data inside it. That's achieved with the <code>SECTIONS{}</code> keyword.</p>
+<p>The way it works at a high level is as follows:</p>
+<pre><code>SECTIONS {
+    &lt;section 1&gt;
+    &lt;section 2&gt;
+    &lt;section 3&gt;
+    …
+}
+</code></pre>
+<p>The general structure of each individual section is:
+<code>output_name : { input_pattern } &gt; memory_region</code></p>
+<p>You can define as many sections as you like.</p>
+<h3>Example</h3>
+<p>Here is a piece of example code (from STM32World - see sources). I'll go through it line-by-line.</p>
+<pre><code>SECTIONS {
+  .vectors  : { KEEP(*(.vectors)) }   &gt; flash
+  .text     : { *(.text*) }           &gt; flash
+  .rodata   : { *(.rodata*) }         &gt; flash
+
+  .data : {
+    _sdata = .;                                  /* .data section start */
+    *(.first_data)
+    *(.data SORT(.data.*))
+    _edata = .;                                  /* .data section end */
+  } &gt; sram AT &gt; flash
+  _sidata = LOADADDR(.data);
+
+  .bss : {
+    _sbss = .;                                   /* .bss section start */
+    *(.bss SORT(.bss.*) *(COMMON))
+    _ebss = .;                                   /* .bss section end */
+  } &gt; sram
+
+  . = ALIGN(8);
+  _end = .;     /* for cmsis_gcc.h  */
+}
+</code></pre>
+<h3>Breakdown</h3>
+<p><code>.vectors : { KEEP(*(.vectors)) } &gt; flash</code>:</p>
+<ul>
+<li>The first <code>.vectors</code> creates a section with that name in the output file</li>
+<li>The wildcard <code>*()</code> searches through all object files for inputs, and <code>.vectors</code> inside the parenthesis specifies that these inputs are sections which <strong>exactly</strong> match that name</li>
+<li><code>KEEP()</code> tells the linker to skip garbage-collection on this section*</li>
+<li>Lastly, <code>&gt; flash</code> tells the linker to place this newly created <code>.vectors</code> section into flash memory</li>
+</ul>
+<p><em>* Garbage-collection is ran when the linker is invoked with the <code>--gc-sections</code> flag. It silently removes sections which appear to have no references to them. For optimisation that's great, but i the context of a startup file on Cortex-M chips, the vector table is never explicitly referenced in code; the CPU uses it automatically, so removing it will be catastrophic.</em></p>
+<p><code>.text : { *(.text*) } &gt; flash</code>:
+This is largely the same as the previous like, except:</p>
+<ul>
+<li>There is no <code>KEEP()</code>, so garbage-collection can remove unused code from this section</li>
+<li>The wildcard <code>*(.text*)</code> once again searches through every object file, but in this case <code>.text*</code> means it will search for <strong>any</strong> section that begins with <code>.text</code> - that could be <code>.text</code>, <code>.text-startup</code>, <code>.text-test-code-1</code>, etc.</li>
+</ul>
+<p>I will split the line starting with <code>.data : {</code> from here.</p>
+<p><code>_sdata = .;</code>:</p>
+<ul>
+<li>Creates a symbol called <code>_sdata</code> in the symbol table <em>(so, it can be used in the source code just like <code>_estack</code> above)</em></li>
+<li>Gives the symbol the value <code>.</code>, which in linker terms is the current memory address. Before this line, <code>.vectors</code>, <code>.text</code>, and <code>.rodata</code> were placed in memory, so <code>.</code> will now return the address of the next free byte right after <code>.rodata</code> ends</li>
+<li>The symbol means <em>&quot;start data&quot;</em>, and it can be used as a pointer to the beginning of the <code>.data</code> section</li>
+</ul>
+<p><code>*(.first_data)</code>:</p>
+<ul>
+<li>Same as the lines above, it looks for sections <strong>exactly</strong> matching <code>.first_data</code> in all object files</li>
+</ul>
+<p><code>*(.data SORT(.data.*))</code>:</p>
+<ul>
+<li>This includes 2 things - all sections <strong>exactly</strong> matching <code>.data</code>, and all sections matching <code>.data.*</code>, where the wildcard <code>*</code> can be replaced with <em>anything</em></li>
+<li><code>SORT()</code> is an alias for <code>SORT_BY_NAME()</code>, which sorts the files/sections alphabetically <em>(ascending)</em> by name before placing it in the newly created section</li>
+</ul>
+<p><code>_edata = .;</code>:</p>
+<ul>
+<li>Exactly the same as the <code>_sdata</code> line, but this now points to the <em>end</em> of the <code>.data</code> section as it's created after the inputs have already been placed</li>
+</ul>
+<p><code>&gt; sram AT &gt; flash</code>:
+Places the section in <code>flash</code> <strong>AND</strong> <code>sram</code>, however in different ways:</p>
+<ul>
+<li><code>sram</code> holds the VMA <em>(Virtual Memory Address)</em>, which is where the runtime address of data is placed*</li>
+<li><code>flash</code> holds the LMA <em>(Load Memory Address)</em>, which is where the data is stored so it can be available and ready to be moved into its VMA at runtime</li>
+</ul>
+<p><code>_sidata = LOADADDR(.data);</code>:</p>
+<ul>
+<li>As you're <em>(hopefully!)</em> familiar by now, this creates a new symbol called <code>_sidata</code></li>
+<li>The symbol has the value <code>LOADADDR(.data)</code>, which is the load address of the <code>.data</code> section <em>(its LMA)</em></li>
+<li>This <strong>is</strong> necessary depending on your use case - despite having access to <code>_sdata</code>, that only has the VMA, <code>LOADADDR()</code> returns the LMA</li>
+</ul>
+<p><em>* LMA persists between power-offs as it's stored into persistent flash memory (in this case). VMA is placed in RAM (in this case yet again), which is non-persistent, so upon a power-off it will be lost. That's why I said VMA is 'placed' - there has to be code to copy it from its LMA to its VMA at startup, otherwise the CPU will try to access the VMA at runtime and (inevitably) access garbage data.</em></p>
+<p>The code starting at <code>.bss : {</code> only has 2 noteworthy things to mention:</p>
+<ul>
+<li>The <code>COMMON</code> keyword makes the linker place all <em>'common'</em> variables in this section - <em>'common'</em> variables are non-static global variables that do not have an assigned value (they're only declared, not initialised). The reason they're in <code>.bss</code> is because C guarantees that uninitialised variables are automatically initialised to 0, that's a preview of what the <code>.bss</code> section does as I'll explain soon</li>
+<li><code>&gt; sram</code> means both the VMA and LMA lay in SRAM, so it takes no space in the final binary that will be flashed onto our STM32 - this is why <code>_sbss</code> and <code>_ebss</code> exist, so the startup code knows where the <code>.bss</code> section lives and it can zero-out the relevant SRAM bytes at runtime</li>
+</ul>
+<p>And the final noteworthy piece - <code>. = ALIGN(8);</code>:</p>
+<ul>
+<li><code>.</code> is still the 'pointer' to the current memory address, except this time we change its value through an assignment</li>
+<li><code>ALIGN(8)</code> moves the pointer to the nearest address above the pointer that's an 8-byte multiple - e.g. it turns <code>0x20003021</code> to <code>0x20003028</code></li>
+</ul>
+<h2>GNU-Style Attributes</h2>
+<p>While not part of the linker script, these work together with it to make everything function properly.</p>
+<p>GNU-style attributes are a way you can:</p>
+<ul>
+<li>talk to the compiler and give it context so it can better understand your code</li>
+<li>tell the compiler about certain optimisations (e.g. always inline a function, function that doesn't return, and <strong>a lot</strong> more)</li>
+<li>label a variable/function with a specific section (the one we care about)</li>
+</ul>
+<p>By doing this:
+<code>__attribute__((section(“.my_section”))) void my_function(void);</code></p>
+<p>The compiler and assembler generate an additional section inside the object file, and call it “.my_section”.</p>
+<p>Your linker can then access that section and whatever is inside it - that way you can place a function or variable anywhere in memory that you wish.</p>
+<h2>Final Words</h2>
+<p>This article barely scratches the surface of what's possible with the linker script. I mostly covered the basics that would be enough for the average basic project <em>(as that's more-or-less what I know as of now)</em>, so I'd recommend looking into more linker script concepts. Check out the sources below - some of them <em>(mostly the written sources)</em> have a lot of extra information on more advanced concepts.</p>
+<h2>Sources</h2>
+<p><a href="https://www.youtube.com/watch?v=m1C2LlFRwY4">STM32World - STM32 Bare Metal Tutorial</a>
+<a href="https://mcuoneclipse.com/2016/11/01/getting-the-memory-range-of-sections-with-gnu-linker-files/">MCU on Eclipse - Accessing GNU Linker Script Symbols from C/C++</a>
+<a href="https://interrupt.memfault.com/blog/how-to-write-linker-scripts-for-firmware">Memfault - Demistifying Firmware Linker Scripts</a></p>
+            </main>
+        </div>
+
+        <script src="script.js"></script>
+    </body>
+</html>

@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta http-equiv="X-UA-Compatible" content="ie=edge">
+        <title>STM32 Bare-Metal Startup (And Blinky) (with Make) - MicroPedia</title>
+        <link rel="stylesheet" href="./reset.css">
+        <link rel="stylesheet" href="./style.css">
+        <link rel="icon" href="./favicon.ico" type="image/x-icon">
+    </head>
+    <body>
+        <header>
+            <img src="assets/ucpedia logo.png" alt="logo">
+            <form action="search.html">
+                <input name="search" id="search" type="text" placeholder="Search articles"><!--
+                --><button id="search-button">search</button>
+            </form>
+        </header>
+
+        <div id="disclaimer" class="display-none">
+            <span class="exit" onClick="hide_disclaimer()">x</span>
+            <h3>SOME NOTES!</h3>
+            <ol>
+                <li>This website exclusively focuses on STM32 microcontrollers. If you are using something else, take this information with a grain of salt. If you are using something with a Cortex-M processor, there is still valuable information you can extract, though not every article will be applicable to a non-STM32 microcontroller.</li>
+                <li>I'm a university student and this site is my passive personal project. I collect my notes as I learn bare-metal embedded programming, then I tidy and upload them here. Being in the learning phase, there are likely a bunch of mistakes around the site. If you spot any, <a href="https://github.com/yani-again" target="_blank">please let me know!</a></li>
+            </ol>
+            <p>More information on the <a href="https://ucpedia.com/">main page!</a></p>
+        </div>
+
+        <div id="main">
+            <div id="contents">
+                <h4 class="underline">Contents</h4>
+                <div></div>
+            </div>
+
+            <main>
+<h1>STM32 Bare-Metal Startup And Blinky</h1>
+<h2>Foreword</h2>
+<p>I've always been interested in bare-metal programming. My first LED blinky was done by setting a bit on my RP2040's register rather than using the SDK.</p>
+<p>However, there are 'things' that happen in between your MCU receiving power and beginning execution of <code>main()</code> - it's what this article is going to cover as it's one of the more interesting topics due to the amount of moving parts it involves. It's also going to be a short article as most of the heavy learning warrants its own article - they are deep enough topics.</p>
+<p>So if you've ever been interested in how an STM32 gets around to running your <code>HAL_GPIO_TogglePin()</code> code, let's find out!</p>
+<p><strong>Take note that I'm using an Nucleo STM32H7S3L8, there may be differences between certain STM32 boards.</strong></p>
+<h2>Pre Requisites</h2>
+<p>These are the tools I use to flash my STM32 boards. You can use the same, or find substitutes. If you choose to follow what I use, this page has instructions on how to actually use them, otherwise you'll have to do some Googling.</p>
+<p>I use:</p>
+<ul>
+<li>Make tools: <code>make</code></li>
+<li>ARM C compiler - <code>gcc</code>, or more precisely <code>arm-gcc-none-eabi</code></li>
+<li>ARM debugger - <code>gdb-multiarch</code></li>
+<li>ST-Link CLI</li>
+<li>Debug interface - <code>openocd</code></li>
+<li>Code editor - <code>vim</code></li>
+</ul>
+<h3>Other Nice-To-Have Things</h3>
+<p>These will help you on any project, from personal experience:</p>
+<ul>
+<li>Datasheets for your CPU and development board</li>
+<li>STM32 HAL manual <em>(e.g. I use the STM32H7 one)</em></li>
+<li>2nd monitor for all of those documents</li>
+<li>UART-to-USB converter cable for debugging</li>
+</ul>
+<h2>Linker Script</h2>
+<p>In short, a linker script informs the linker of the target's memory layout, so it knows where to place code and data within it.</p>
+<p>This is a topic with enough depth to demand its own article, so if you want an in-depth explanation to the best of my ability, you can find it <strong>here</strong>.</p>
+<p><a href="#">Here</a> is the linker script for this article <em>(once again, specific to the STM32H7S3L8)</em> - I may update this page with a linker script for the <em>STM32G031K8</em>.</p>
+<h2><strong>OOPS!</strong> This article is currently <em>unfinished</em></h2>
+<p>Working on it!</p>
+<h2>Sources</h2>
+<p><a href="https://www.youtube.com/@stm32world">STM32World YouTube</a></p>
+            </main>
+        </div>
+
+        <script src="script.js"></script>
+    </body>
+</html>

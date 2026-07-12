@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta http-equiv="X-UA-Compatible" content="ie=edge">
+        <title>Makefile (make) For Linux/STM32 - MicroPedia</title>
+        <link rel="stylesheet" href="./reset.css">
+        <link rel="stylesheet" href="./style.css">
+        <link rel="icon" href="./favicon.ico" type="image/x-icon">
+    </head>
+    <body>
+        <header>
+            <img src="assets/ucpedia logo.png" alt="logo">
+            <form action="search.html">
+                <input name="search" id="search" type="text" placeholder="Search articles"><!--
+                --><button id="search-button">search</button>
+            </form>
+        </header>
+
+        <div id="disclaimer" class="display-none">
+            <span class="exit" onClick="hide_disclaimer()">x</span>
+            <h3>SOME NOTES!</h3>
+            <ol>
+                <li>This website exclusively focuses on STM32 microcontrollers. If you are using something else, take this information with a grain of salt. If you are using something with a Cortex-M processor, there is still valuable information you can extract, though not every article will be applicable to a non-STM32 microcontroller.</li>
+                <li>I'm a university student and this site is my passive personal project. I collect my notes as I learn bare-metal embedded programming, then I tidy and upload them here. Being in the learning phase, there are likely a bunch of mistakes around the site. If you spot any, <a href="https://github.com/yani-again" target="_blank">please let me know!</a></li>
+            </ol>
+            <p>More information on the <a href="https://ucpedia.com/">main page!</a></p>
+        </div>
+
+        <div id="main">
+            <div id="contents">
+                <h4 class="underline">Contents</h4>
+                <div></div>
+            </div>
+
+            <main>
+<h1>Makefile (<code>make</code>) For Linux/STM32</h1>
+<h2>What Is Makefile?</h2>
+<p>When I started learning embedded programming, I would manually build every project on my little Raspberry Pi Pico.</p>
+<p>This means compiling + assembling (<code>arm-none-eabi-gcc</code>), linking (<code>arm-none-eabi-ld</code>), converting ELF to binary (<code>arm-none-eabi-objcopy</code>), converting binary to UF2 (<code>uf2conv</code>), flashing (<code>picotool</code>), and finally removing all leftover files from the build process.</p>
+<p>In total, there were about 7 commands to run every time I wanted to make <strong>any</strong> tiny change.</p>
+<p>This is what Makefile solves, and it does it by ‘bundling' all commands when you call <code>make</code>.</p>
+<p>This article is an example-driven explanation of <strong>how to use Makefile on Linux</strong> <em>(and MacOS - as they're both Unix-based).</em></p>
+<h2>The General Idea</h2>
+<p>This is what Makefile is at its core, in a general form:</p>
+<pre><code class="language-make">target : prerequisite(s)
+    command(s)
+</code></pre>
+<p>Here's what's happening:</p>
+<ul>
+<li><code>target</code> is the target/file name, which can also be an input for other targets <em>(think of it like a function name from something like C/Python)</em></li>
+<li><code>prerequisite(s)</code> are file names that must exist in order for the commands to be executed - they're dependencies</li>
+<li><code>command(s)</code> are the actual shell commands that will run should the target get executed</li>
+</ul>
+<p>Command lines must start with a tab character. Spaces <strong>do not</strong> work, it has to be the ‘\t’ ASCII character.</p>
+<h3>Targets</h3>
+<p>Here's a basic target:</p>
+<pre><code class="language-make">hello:
+    gcc main.c -o hello
+</code></pre>
+<p>When you run <code>make</code> from the same directory as your <code>Makefile</code>, this will compile <code>main.c</code> and output a file called <code>hello</code>. Note that <code>main.c</code> must exist, as it would if you compiled it by hand.</p>
+<p>There is one caveat - if the <code>hello</code> file exists already, it won't compile (that's because our target name is <code>hello</code>).</p>
+<h3>Prerequisites</h3>
+<p>This is where prerequisites come in:</p>
+<pre><code class="language-make">hello: main.c
+    gcc main.c -o hello
+</code></pre>
+<p>By specifying <code>main.c</code> as a prerequisite, <code>make</code> will now check if <code>main.c</code> has been modified more recently than <code>hello</code>, if that's true it'll execute the commands. If <code>hello</code> doesn't exist, it'll run in any case.</p>
+<h2>Targets As Prerequisites</h2>
+<pre><code class="language-make">hello: hello.o
+    gcc hello.o -o hello
+
+hello.o: main.c
+    gcc -c main.c -o hello.o
+</code></pre>
+<p>Here, <code>hello</code> requires <code>hello.o</code> to run, so it runs it after finding it in the Makefile. <code>hello.o</code> requires <code>main.c</code>, which it can find in the working directory.</p>
+<p>In turn, <code>hello.o</code> runs first, when <code>hello</code> runs after.</p>
+<p>If you delete <code>main.c</code>, both targets will need to be run again after the file is created again.</p>
+<p>If you change the last-modified time of <code>hello.o</code> to make it newer, only <code>hello</code> will need to be run again.</p>
+<h2>Calling Targets</h2>
+<p>Up until now, I've only mentioned calling <code>make</code> without parameters. That will, by default, just execute the very first target in the file, which may or may not result in an error (e.g. if the prerequisites are older than the target file).</p>
+<p>This can be changed by calling <code>make &lt;target&gt;</code>, such as by calling <code>make hello.o</code> from the section above - it'll only run <code>hello.o</code> and skip <code>hello</code>, so it'll only create a <code>hello.o</code> file as an output.</p>
+<h3>Clean</h3>
+<p>Specifying a target is useful for many reasons. One of the main ones is cleanup:</p>
+<pre><code class="language-make">hello: hello.o
+    gcc hello.o -o hello
+
+hello.o: main.c
+    gcc -c main.c -o hello.o
+
+clean:
+    rm -f hello hello.o
+</code></pre>
+<p>Running <code>make</code> will only call <code>hello</code> and <code>hello.o</code>, which get created as files in the working directory. So you can avoid cleaning up manually after, you can run <code>make clean</code>, which will remove the 2 that got made.</p>
+<h2>Variables</h2>
+<p>These work exactly like you'd expect, exactly like your favourite programming language <em>(hopefully C)</em>.</p>
+<p>The only <strong>important distinction</strong> is that these variables can <strong>only</strong> be strings.</p>
+<pre><code class="language-make"># create a variable called inputs that is the string &quot;input1 input2 input3&quot;
+# note there are NO quotation marks
+inputs := input1 input2 input3
+
+# then use it
+my_program : $(inputs)
+    gcc $(inputs) -o my_program
+</code></pre>
+<p>In the above code, anywhere I write <code>$(inputs)</code>, it'll get replaced with the string &quot;input1 input2 input3&quot;</p>
+<h2>Automatic Variables</h2>
+<p>Sometimes you want to use the name of the target or prerequisite(s) inside a command. This is how:</p>
+<pre><code class="language-make">prerequisites := one two three four
+
+my_program : $(prerequisites)
+    echo $@
+    echo $&lt;
+    echo $^
+    echo $?
+</code></pre>
+<p>If you run <code>make</code> here, it'll see that <code>my_program</code> is the first target and run it. That will result in 4 <code>echo</code> commands being executed:</p>
+<ol>
+<li><code>$@</code> is the current target's name, so that'll echo <code>my_program</code></li>
+<li><code>$&lt;</code> is the <strong>first</strong> prerequisite, so that'll echo <code>one</code></li>
+<li><code>$^</code> is <strong>all</strong> prerequisites, so that'll echo <code>one two three four</code></li>
+<li><code>$?</code> is <strong>all</strong> prerequisites that are <strong>newer</strong> than the target, so the echo will depend on timestamps here</li>
+</ol>
+<h2>Wildcards</h2>
+<p>In the above example, we only had to clean up 2 files, which was easy enough to do by writing their names in the <code>clean</code> target as an <code>rm</code> command.</p>
+<p>But what if you had a very elaborate build process which created tens of intermediate files on its way to creating the final executable binary?</p>
+<p>For that there are wildcards.</p>
+<h3><code>*</code> Wildcard</h3>
+<p>When you put <code>*</code> around a target, it will create a match for <em>any</em> amount of <em>any</em> characters. The placement also matters:</p>
+<ul>
+<li><code>*_drivers.c</code> will match <code>usb_drivers.c</code>, <code>uart_drivers.c</code>, <code>essential_startup_drivers.c</code>, and <strong>any file</strong> that ends in <code>_drivers.c</code></li>
+<li><code>usb_*</code> will match <code>usb_drivers.c</code>, <code>usb_drivers.h</code>, <code>usb_init.c</code>, <code>usb_init.h</code>, and <strong>any file</strong> that begins with <code>usb_</code></li>
+<li><code>usb_*.c</code> will match <code>usb_drivers.c</code>, <code>usb_init.c</code>, and <strong>any file</strong> that begins with <code>usb_</code> and ends with <code>.c</code> - so all USB-related .c files</li>
+</ul>
+<h3><code>%</code> Wildcard</h3>
+<p>This is the confusing one.</p>
+<p>What makes it easy to understand is knowing that:</p>
+<ul>
+<li>it can only be used in the target and prerequisite areas (<code>target : prerequisite</code>)</li>
+<li>it doesn't care if a matching file exists yet</li>
+</ul>
+<p>Here's an example use case to talk about it:</p>
+<pre><code class="language-make">OBJECTS := main.o uart.o gpio.o
+
+my_program : $(OBJECTS)
+    gcc $(OBJECTS) -o my_program
+
+%.o : %.c
+    gcc -c $&lt; -o $@
+</code></pre>
+<p>If you run <code>make</code> here, it'll see that <code>my_program</code> is the first target and run it:</p>
+<ol>
+<li><code>my_program</code> has prerequisites that don't exist <em>(the <code>.o</code> files haven't been created yet)</em></li>
+<li>As there are multiple prerequisites, it goes one at a time - starting with <code>main.o</code> as that's first in <code>OBJECTS</code></li>
+<li>It sees <code>%.o</code> as a target name - <em>bingo!</em> The <code>%</code> wildcard allows make to replace all <code>%</code> symbols with the <em>'stem'</em> - in this case <code>main</code></li>
+</ol>
+<p>As a result, the following target gets called:</p>
+<pre><code class="language-make">main.o : main.c
+    gcc -c $&lt; -o $@
+</code></pre>
+<p>This is done with <code>uart.o</code> and <code>gpio.o</code> as well, as they're also in the variable <code>OBJECTS</code>.</p>
+<p>The <code>$&lt;</code> and <code>$@</code> automatic variables are explained in the above section.</p>
+<p>I think what really makes this click for me is understanding that <code>%.o : %.c</code> can't exist on its own - it needs to be explicitly called with a stem like <code>main</code> so it can turn it into something useful, <code>main.o : main.c</code> in this case. It doesn't just automatically search the working directory for all possible target names that would match; it only searches the working directory for prerequisites.</p>
+<h2>Sources</h2>
+<p><a href="https://makefiletutorial.com/">Chase Lambert Makefile Tutorial</a> - Main Source
+<a href="https://www.gnu.org/software/make/manual/html_node/Pattern-Rules.html">GNU Pattern Rules</a></p>
+            </main>
+        </div>
+
+        <script src="script.js"></script>
+    </body>
+</html>
