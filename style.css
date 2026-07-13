@@ -27,10 +27,10 @@ body {
 
 #contents {
     padding-right: 25px;
-    margin-top: 73px;
     width: 680px;
     height: fit-content;
-    position: relative;
+    position: sticky;
+    top: 4ch;
 }
 #contents a {
     margin-top: 5px;
@@ -169,4 +169,13 @@ pre {
     border-radius: 15px;
     background-color: var(--gray);
     border: 1px solid var(--darkgray);
+}
+
+main img {
+    max-width: 75%;
+    border: 2px solid var(--darkgray);
+    box-shadow: 0 0 10px 3px #00000034;
+    margin: 1ch 0;
+    padding: 1ch;
+    border-radius: 10px;
 }
