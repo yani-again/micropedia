@@ -5,13 +5,13 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <meta http-equiv="X-UA-Compatible" content="ie=edge">
         <title>STM32 Linker Script (From Scratch) - MicroPedia</title>
-        <link rel="stylesheet" href="./reset.css">
-        <link rel="stylesheet" href="./style.css">
-        <link rel="icon" href="./favicon.ico" type="image/x-icon">
+        <link rel="stylesheet" href="../reset.css">
+        <link rel="stylesheet" href="../style.css">
+        <link rel="icon" href="../public/favicon.ico" type="image/x-icon">
     </head>
     <body>
         <header>
-            <img src="assets/ucpedia logo.png" alt="logo">
+            <img src="../assets/ucpedia logo.png" alt="logo">
             <form action="search.html">
                 <input name="search" id="search" type="text" placeholder="Search articles"><!--
                 --><button id="search-button">search</button>
@@ -37,7 +37,6 @@
             <main>
 <h1>STM32 Linker Script (From Scratch)</h1>
 <h2>Foreword</h2>
-<p>The linker script is</p>
 <p>When you hit &quot;build&quot; on something like STM32CubeIDE, something called a <strong>linker</strong> runs at some point in that process.</p>
 <p>Its role is to take your code <em>(more specifically, a generated object file, such as an <code>.elf</code> file)</em> and map it onto the target device in a way that fits the specific hardware.</p>
 <h2>A Raspberry Pi Example</h2>
@@ -224,6 +223,6 @@ Places the section in <code>flash</code> <strong>AND</strong> <code>sram</code>,
             </main>
         </div>
 
-        <script src="script.js"></script>
+        <script src="../script.js"></script>
     </body>
 </html>

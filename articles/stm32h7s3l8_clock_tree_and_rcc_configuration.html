@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta http-equiv="X-UA-Compatible" content="ie=edge">
+        <title>STM32H7RS Reset and Clock Controller (RCC) - H7R/H7S series - MicroPedia</title>
+        <link rel="stylesheet" href="../reset.css">
+        <link rel="stylesheet" href="../style.css">
+        <link rel="icon" href="../public/favicon.ico" type="image/x-icon">
+    </head>
+    <body>
+        <header>
+            <img src="../assets/ucpedia logo.png" alt="logo">
+            <form action="search.html">
+                <input name="search" id="search" type="text" placeholder="Search articles"><!--
+                --><button id="search-button">search</button>
+            </form>
+        </header>
+
+        <div id="disclaimer" class="display-none">
+            <span class="exit" onClick="hide_disclaimer()">x</span>
+            <h3>SOME NOTES!</h3>
+            <ol>
+                <li>This website exclusively focuses on STM32 microcontrollers. If you are using something else, take this information with a grain of salt. If you are using something with a Cortex-M processor, there is still valuable information you can extract, though not every article will be applicable to a non-STM32 microcontroller.</li>
+                <li>I'm a university student and this site is my passive personal project. I collect my notes as I learn bare-metal embedded programming, then I tidy and upload them here. Being in the learning phase, there are likely a bunch of mistakes around the site. If you spot any, <a href="https://github.com/yani-again" target="_blank">please let me know!</a></li>
+            </ol>
+            <p>More information on the <a href="https://ucpedia.com/">main page!</a></p>
+        </div>
+
+        <div id="main">
+            <div id="contents">
+                <h4 class="underline">Contents</h4>
+                <div></div>
+            </div>
+
+            <main>
+<h1>STM32H7RS Reset and Clock Controller (RCC) - H7R/H7S series</h1>
+<p>I don't know about you, but I went a <em>long</em> time hearing all these terms - PLL, CSI, AHB - thrown around without really understanding what they are beyond <em>&quot;yeah it's some clock stuff&quot;</em>, so I wrote this article to finally change that.</p>
+<p>Hopefully you're a fan of bookkeeping, because while resets &amp; clock trees may not be the most complex topic, they certainly have a lot of surface area that needs to get tracked - especially with the STM32H7S3L8. I mean, this is easily the longest article on Micropedia by a mile, and will likely remain this way until I get into something like the USB or FDCAN peripherals at some point.</p>
+<h2>Important Note</h2>
+<p>Some of the info on this page is taken from the <a href="https://www.st.com/content/ccc/resource/training/technical/product_training/group0/81/96/f3/1a/55/d9/40/52/STM32H7-System-Reset_and_clock_control_RCC/files/STM32H7-System-Reset_and_clock_control_RCC.pdf/_jcr_content/translations/en.STM32H7-System-Reset_and_clock_control_RCC.pdf">STMicroelectronics - STM32H7 RCC Presentation</a>, which is an excellent educational resource from ST, however despite the STM32H7S3 technically fitting into the MCU that this presentation covers, it actually has some inaccurate information. The STM32H7RS reference manual <em>(RM0477)</em> is treated as authoritative in such instances, as this article is written with the Nucleo-STM32H7S3L8 as the target MCU. Concepts still apply to other STM32 microcontrollers, however some features are STM32H7RS-exclusive or specific, so keep that in mind.</p>
+<h2>PWR Block</h2>
+<p>If you just came here for RCC, I'm sorry to disappoint you, but you should probably look at the <a href="https://ucpedia.com/stm32h7rs_power_controller.html">PWR</a> section first - <a href="https://www.st.com/content/ccc/resource/training/technical/product_training/group0/81/96/f3/1a/55/d9/40/52/STM32H7-System-Reset_and_clock_control_RCC/files/STM32H7-System-Reset_and_clock_control_RCC.pdf/_jcr_content/translations/en.STM32H7-System-Reset_and_clock_control_RCC.pdf">STMicroelectronics themselves</a> recommend reading up on that before looking at RCC, they're tighly coupled due to power modes and POR/BOR coming up.</p>
+<p>The good thing is, PWR is only ~70 pages in the reference manual, which is noticeably shorter. It's also noticeably easier to learn than RCC, speaking from experience.</p>
+<h2>Overview</h2>
+<p>RCC stands for <strong>R</strong>eset and <strong>C</strong>lock <strong>C</strong>controller, and it does exactly that: controls and manages resets and clock generation.</p>
+<p>The term 'resets' is actually an umbrella term for 3 different types of reset:</p>
+<ol>
+<li><strong>system reset:</strong> resets all registers, except for certain ones in the PWR and RCC blocks, and it also doesn't reset the backup domain</li>
+<li><strong>power reset:</strong> resets all logic in <code>VDD</code> and <code>VCORE</code> domains, except the backup domain, and it also triggers a system reset <em>(<code>NRST</code> pin is asserted during a system reset)</em></li>
+<li><strong>backup domain reset:</strong> resets the backup domain and <code>RCC_BDCR</code>, for when you want to reset the RTC and LSE</li>
+</ol>
+<p>And the RCC handles all of those, as mentioned in the <a href="https://www.st.com/content/ccc/resource/training/technical/product_training/group1/ce/12/a4/e8/e7/52/47/35/stm32h7rs-architecture-overview/files/stm32h7rs-architecture-overview.pdf/jcr:content/translations/en.stm32h7rs-architecture-overview.pdf">STM32H7RS Architecture Overview</a>.</p>
+<p>In terms of clocks, both the general H7x and the H7RS have:</p>
+<ul>
+<li>4 internal oscillators</li>
+<li>2 external oscillators</li>
+<li>3 phase-locked loops (PLLs)</li>
+</ul>
+<p>That's a lot of clocks, and for good reason! With this many options, the programmer can choose from a wide array of sources for different power-consumption and accuracy goals for different peripherals <em>(e.g. you can comfortably use a different clock to avoid altering up baud rates for UART)</em>.</p>
+<p>On the generic H7x family, you also have 3 different 'domains' to sort of partition the system based off needed clock speeds, but the H7RS unifies the system by skipping the domains, so this article won't talk about them beyond this point.</p>
+<h2>Resets</h2>
+<h3>Reset Generation</h3>
+<p>Multiple reset signals get fed into the RCC block, within which there is logic to execute any kind of reset - as RM0477 says, <em>&quot;The RCC handles the reset generation for the complete product&quot;</em>. So, a block doesn't actually generate the reset itself, it simply 'requests' the RCC to do it on its behalf. For example, the PWR block doesn't trigger a power reset itself when it detects a BOR voltage violation - it just sets the <code>pwr_bor_rst</code> bit and it's off to the RCC to handle it.</p>
+<p>But the RCC doesn't just generate the reset and call it a day - upon the completion of a reset, it also sets a readable flag to indicate the source of the reset.</p>
+<h3>Reset Sources</h3>
+<p>The example above mentioned the PWR block, but there are a multitude of sources which can signal a reset-worthy event to the RCC. I outline them here.</p>
+<h4>Reset From PWR Block</h4>
+<p>Possible reset signals:</p>
+<ul>
+<li><code>pwr_por_rst</code>: VDD voltage is below VPOR threshold</li>
+<li><code>pwr_bor_rst</code>: VDD voltage is below VBOR threshold</li>
+<li><code>pwr_vcore_ok</code>: VCORE supply is invalid/unavailable*</li>
+<li><code>pwr_vsw_rst</code>: VSW voltage is below threshold, backup domain related</li>
+<li><code>rcc_vcore_rst</code>: generated from <code>pwr_vcore_ok</code>, except this one stays asserted until the option-byte loading <em>(OBL)</em> operation completes</li>
+</ul>
+<p>Resets from PWR block are power resets, 1 of the 3 types outlined above.</p>
+<p><em>* Since VCORE is switched off in STANDBY mode, this signal is also generated when exiting STANDBY. Furthermore, when VDD is invalid, this is also generated.</em></p>
+<h4>Application &amp; System Resets</h4>
+<p>After a reset, if your RCC says <code>sys_rst</code>, that's a system reset. What it does is set most device registers to their default value, unless otherwise specified in the reference manual.</p>
+<p>An application reset <code>nreset</code> is just the same, except it doesn't get asserted when the system exits from STANDBY mode.</p>
+<p>A system reset can be triggered by:</p>
+<ul>
+<li>asserting on the NRST pin (external reset)</li>
+<li>POR/BOR voltage violations (<code>pwr_por_rst</code> / <code>pwr_bor_rst</code>)</li>
+<li>independent watchdog resets (<code>iwdg_out_rst</code>)</li>
+<li>window watchdog, depending on configuration (<code>wwdg_out_rst</code>)</li>
+<li>exit from standby (<code>rcc_vcore_ok</code>)</li>
+<li>software-generated reset using Cortex-M7's SYSRESETREQ signal - <em>RM0477 also calls it SFTRESET</em></li>
+<li>entering a low-power mode with the low-power mode reset option bytes cleared <em>(small section at the end of the <a href="https://ucpedia.com/per_controller.html">PWR article</a> if you're curious)</em></li>
+<li>flash-triggered due to option byte reload request</li>
+</ul>
+<h4>NRST pin reset</h4>
+<p>This pin can be used for an external reset, like one STM32 resetting another.</p>
+<p>It idles at 1 <em>(active low)</em> so in order to signal a reset, it needs to have 0 asserted on it. And it doesn't matter how long the 0 is asserted for - it could be a single clock cycle - the NRST pin has a pulse stretcher that guarantees a signal will be stretched to at least 20 microseconds to fully propagate the reset.</p>
+<p>The actual reset triggered is an application reset - you'll see <code>nreset</code> asserted upon the reset.</p>
+<h4>Low-Power Mode Security Reset</h4>
+<p>Briefly mentioned in the <em>Application &amp; System Resets</em> section above, the purpose of this is to avoid critical applications from unintentionally entering STOP/STANDBY modes.</p>
+<p>When you clear the option bytes <code>nRST_STOP</code> or <code>nRST_STANDBY</code>, a system reset will be initiated if the device mistakenly enters STOP or STANDBY mode respectively.</p>
+<p>If the latter happens <em>(STANDBY)</em>, a flag is also set in the PWR controller.</p>
+<p>On the H7S3L8, <code>RCC_RSR</code> has a bit set to indicate this reset occurred.</p>
+<h4>Backup Domain Reset</h4>
+<p>The backup domain, which has the RTC, backup RTC registers, and backup SRAM, can be reset in the 2 ways, both of which do it differently:</p>
+<ul>
+<li>software reset via <code>RCC_BDCR</code>, which sets all RTC registers and <code>RCC_BDCR</code> to their default values, <strong>except</strong> <code>LSEDRV</code> which remains unchanged is <code>LSEON</code> = 1. Backup SRAM is not affected</li>
+<li>VSW voltage is outside of operating range <em>(VSW is the direct voltage from VDD/VBAT)</em>. All RTC registers and <code>RCC_BDCR</code> are reset to their default values, and the backup SRAM becomes invalid</li>
+</ul>
+<h4>Coresight Debug Reset</h4>
+<p>A debugger-related reset so you can enter debug mode on your board.</p>
+<p>It only* occurs when a <code>rcc_vcore_rst</code> reset occurs <em>(upon a power-on reset, or exiting STANDBY mode)</em>.</p>
+<p><em>* If you read RM0477 yourself, you'll find it also claims this can be triggered by setting the <code>CDBGRSTREQ</code> bit in <code>DP_CTRLSTAT</code> over the DAP, and the reset will remain for as long as the bit is asserted. However, in the same document, CDBGRSTREQ is listed as being “not used in this device”. So, check the reference manual for your specific board if you plan on using this feature.</em></p>
+<h4>Option Bytes Loading (OBL)</h4>
+<p>This isn't a reset in itself, instead it's more like a process that gatekeeps a system reset until the option bytes finish loading.</p>
+<p>It happens:</p>
+<ul>
+<li>after a power-on reset <em>(<code>pwr_por_rst</code>)</em></li>
+<li>after an exit from STANDBY mode</li>
+<li>when the flash block requests a reload of option bytes</li>
+</ul>
+<p>And it will keep the system in reset until the option bytes are loaded.</p>
+<h4>Peripheral Resets</h4>
+<p>The software can reset any peripheral, at any time, on demand.</p>
+<p>On the STM32H7RS family, you can reset any peripheral using the <code>RCC_xxxxRSTR</code>, where <code>xxxx</code> is the bus on which the peripheral is on.</p>
+<p>The register has a bit like:</p>
+<ul>
+<li>reset <code>GPIOx</code></li>
+<li>reset <code>UARTx</code></li>
+<li>reset <code>I2Cx</code></li>
+<li>etc.</li>
+</ul>
+<p>And that lets you reset a certain peripheral, like GPIOB, by just setting the bit and then clearing it. You just need to find the right register.</p>
+<p><code>CRYP</code>, <code>SAES</code>, and <code>HASH</code> can all also be reset in this way, which you'd usually do in a tamper event.</p>
+<h3>Reset Coverage</h3>
+<p>RM0477 provides Table 56 <em>(shown below)</em>, which checks a box if a particular reset affects a particular part of the board.</p>
+<p>If you want to reset a specific part of your MCU, have a look at what options you have using that table!</p>
+<p><img src="./assets/table_56-reset_coverage.png" alt="Table 56 - Reset Coverage" /></p>
+<h2>Clocks</h2>
+<p>This is the other half of the RCC's role.</p>
+<p>Here are the available clock generators on the H7RS:</p>
+<ul>
+<li>HSI <em>(high-speed internal)</em> at 8/16/32/64 MHz*</li>
+<li>HSE <em>(high-speed external)</em> at 4-50 MHz</li>
+<li>LSE <em>(low-speed external)</em> at 32 KHz</li>
+<li>LSI <em>(low-speed internal)</em> at 32 KHz*</li>
+<li>CSI <em>(low-power internal)</em> at 4 MHz*</li>
+<li>HSI48 <em>(high-speed internal)</em> at 48 MHz*</li>
+</ul>
+<p><em>* These oscillators don't generate the exact stated value, they just generate a rough one that hits the target 'close enough'. Notice that they're all internal oscillators - this is because the external oscillators are more accurate.</em></p>
+<h2>Clock Naming</h2>
+<p>RM0477 uses 3 names for different clocks:</p>
+<ul>
+<li>Peripheral clock</li>
+<li>CPU clock</li>
+<li>Bus matrix clock</li>
+</ul>
+<h3>Peripheral Clock</h3>
+<p>As the name implies, these are provided to peripherals by the RCC.</p>
+<p>The notable thing is that <em>’peripheral'</em> in this case means the on-board ones, not something external like a screen or sensor. Solely the ones connected directly over the AHB/ABP/AXI buses.</p>
+<p>There are 2 types of peripheral clocks:</p>
+<ol>
+<li>Bus interface</li>
+<li>Kernel</li>
+</ol>
+<p>Bus interface clocks are provided to all peripherals and they're used for accessing the peripheral's registers to do things like configuration. Generally this is the AHB/ABP/AXI clock, wherever the peripheral is connected <em>(e.g. I2C2 is connected on the APB1 bus, so you'd use the <code>RCC_APB1ENR1</code> register and set the <code>I2C2EN</code> bit)</em></p>
+<p>The kernel clock is for peripherals which have functionality that needs some form of regular timing <em>(sending/sampling data)</em>, to survive ultra low-power modes, or a very specific clock speed that is unrealistic to achieve with the bus clock. Generally it's used for <em>(not an exhaustive list)</em>:</p>
+<ul>
+<li>UART</li>
+<li>SPI</li>
+<li>I2C</li>
+<li>USB</li>
+</ul>
+<p>But you can just use a bus clock only for:</p>
+<ul>
+<li><em>RCC itself</em></li>
+<li>GPIO</li>
+<li>EXTI</li>
+<li>PWR</li>
+</ul>
+<p>Hopefully you see the pattern - when you need to talk to the real world or need a specific speed <em>(UART baud rate)</em>, you enable the kernel clock.</p>
+<p>There are benefits to this.</p>
+<p>Normally, many peripherals are connected to a single bus. For example, if you want I2C1 and I2C2 both talking at different speeds, you'd find it rather impossible to <em>(unless you keep re-configuring the bus speed every time you want to go from using one I2C to the other, of course!)</em>. With a bus &amp; kernel clock, you* can use the bus clock to talk to the peripheral's registers for things like configuration, and use the kernel clock for the actual data transfers, shift registers, etc.</p>
+<p>Besides not needing to share the clock speed for every peripheral, decoupling the clocks also means you can set a highly specific clock speed for one peripheral <em>(e.g. you will often find it hard to get the exact UART baud rate you need just from the bus clock, which is where you'd give UART its own kernel clock and configure it to your desire to get your clean baud rate)</em>.</p>
+<p>Low-power modes are another consideration - in STOP/STANDBY, the bus clocks are disabled and the only way you can keep a clock active is through something like the LSE, <em>which can be used as the kernel clock for peripherals so they remain online</em>, with bus clocks that's not possible.</p>
+<p>At the end of the day, the key takeaway here is that you need to remember that for some peripherals you'll need to enable only the bus clock, and for others you'll need to enable the bus clock <strong>and</strong> enable/configure the kernel clock.</p>
+<p><em>* I say 'you', but which bus clock gets used is actually automatic. You only enable and configure them.</em></p>
+<p>What a mouthful...</p>
+<h3>CPU Clock</h3>
+<p>Derived from <code>sys_ck</code> <em>(system clock)</em>, and as the name suggests, it's provided to the CPU for its functionality.</p>
+<p>Note I say <em>'derived from'</em>; it is <strong>NOT</strong> <code>sys_ck</code>, it just uses it to create the CPU clock.</p>
+<h3>Bus Matrix Clocks</h3>
+<p>These are the bus clocks themselves <em>(same ones that get provided to peripherals)</em>, and they go to AHB/APB/AXI.</p>
+<p>They're also drived from <code>sys_ck</code>.</p>
+<h2>Oscillators</h2>
+<h3>What Are Oscillators?</h3>
+<p>I've mentioned <em>'oscillators'</em> a couple of times, and I will mention them a lot more right after this.</p>
+<p><em>But what are they?</em></p>
+<p>Here's the Cambridge Dictionary definition of <em>oscillate</em>:
+<em>&quot;To move repeatedly from one position to another.&quot;</em></p>
+<p>That's exactly what a microcontroller's oscillator is - a 'thing' which repeatedly moves from 1 to 0 and back at unfathomable speeds <em>(millions of times per second)</em>, and each tick from 1-to-0 or 0-to-1 causes the MCU to execute an instruction, like adding 2 numbers together.</p>
+<p>And when I say 'thing', what I mean is that an oscillator is typically a crystal <em>(yes, like the ones some people collect for fun)</em>. Usually they're highly-pure, lab-grown quartz crystals which generate the oscillating electrical circuit through something called the Piezoelectric effect <em>(it's interesting, you can look it up, I'm mostly focusing on software &amp; software concepts here)</em>.</p>
+<p>Time to get into the details of the clock generators themselves and understand when to use each and how.</p>
+<h2>High-Speed External (HSE)</h2>
+<p><em>Accurate, high-speed.</em></p>
+<h3>Clock Generation</h3>
+<p>HSE can be generated in 2 ways:</p>
+<ol>
+<li>External clock source <em>(bypass)</em></li>
+<li>External resonator</li>
+</ol>
+<p>The Nucleo-STM32H7RS boards come with an X1 crystal which is capable of 24 MHz, this is referring to option 2 from the list above.</p>
+<p>When using external clock sources, you can use an analog source as the STM32H7RS has a built-in clock squarer.</p>
+<h4>External Clock Source</h4>
+<p>When not using the oscillator, you can provide your own clock source to the <code>OSC_IN</code> pin:</p>
+<ul>
+<li><code>HSEON</code> is set to 1</li>
+<li><code>HSEBYP</code> is set to 1</li>
+<li><code>OSC_OUT</code> pin is left high-impedance <em>(not floating)</em></li>
+</ul>
+<p>For a digital clock source, also set <code>HSEEXT</code> to 1. For an analog one, set it to 0.</p>
+<h4>External Resonator</h4>
+<p>The Nucleo-STM32H7RS boards all come with a 24 MHz X1 crystal, so you don't have to externally plug one in.</p>
+<p>If you want to use it, you need to set these bits:</p>
+<ul>
+<li><code>HSEON</code> = 1</li>
+<li><code>HSEBYP</code> = 0</li>
+</ul>
+<p>If you use the on-board oscillator provided by ST, that's all for this step, otherwise look at an official STMicroelectronics on how to connect your own crystal.</p>
+<h3>HSE Ready</h3>
+<p><code>HSERDY</code> is a flag which indicates whether the HSE has a valid clock source at <code>hse_ck</code> <em>(that's the actual clock source line which gets used)</em>. 256 valid cycles of the HSE need to be detected and <code>HSEON</code> needs to be 1 for <code>HSERDY</code> to go to 1, after which the clock is released.</p>
+<p>When <code>HSERDY</code> goes to 1 an interrupt can be enabled using the <code>RCC_CIER</code> <em>(this can be done for all clocks, not just HSE)</em>.</p>
+<p>So the HSE can be turned on/off in software using that bit, but there are times when the hardware will refuse:</p>
+<ul>
+<li>if HSE is used as the system clock directly</li>
+<li>if HSE is used as reference for PLL1, and PLL1 is enabled and providing the system clock</li>
+<li>if either of <code>XSPICKP</code> or <code>FMCCKP</code> are set to 1</li>
+</ul>
+<p>Additionally, <code>HSEEXT</code> and <code>HSEBYP</code> can't be modified when <code>HSEON</code> is 1.</p>
+<p>To mention it again from the PWR article, HSE is turned off upon entering STOP/STANDBY modes.</p>
+<h3>HSE Programming Sequence</h3>
+<p>On the STM32H7RS, you can initialise the HSE using the following sequence:</p>
+<ol>
+<li>HSE is the system clock in any capacity, switch over to HSI/CSI first</li>
+<li>Flip <code>XSPICKP</code> and <code>FMCCKP</code> to 0 <em>(if they're not already)</em></li>
+<li>Disable HSE with <code>HSEON</code> = 0</li>
+<li>Disabling isn't instant, so wait until <code>HSERDY</code> = 0</li>
+<li>Configure to your desired configuration through <code>HSEBYP</code> and <code>HSEEXT</code></li>
+<li>Re-enable <code>HSEON</code> <em>(set it to 1)</em></li>
+<li>Wait for <code>HSERDY</code> = 1</li>
+</ol>
+<p>Your HSE is now ready to use!</p>
+<h2>Low-Speed External (LSE)</h2>
+<p><em>Accurate, low-speed.</em></p>
+<p>The clock generation diagram for LSE is almost identical to HSE, so a lot of the details overlap.</p>
+<p>Like the HSE, LSE can generate a clock source through 2 methods:</p>
+<ol>
+<li>external clock source <em>(bypass)</em></li>
+<li>external crystal</li>
+</ol>
+<p>The Nucleo-STM32H7RS boards come shipped with an X2 crystal capable of 32.768 KHz, this is referring to option 2 from the list above.</p>
+<h3>External Clock Source</h3>
+<p>When not using the oscillator, you can provide your own clock source through the <code>OSC32_IN</code> pin:</p>
+<ul>
+<li><code>LSEON</code> = 1</li>
+<li><code>LSEBYP</code> = 1</li>
+<li><code>OSC32_OUT</code> pin is left high-impedance <em>(think of it as disconnected - the PWR block article has an explanation on this)</em></li>
+</ul>
+<p>For a digital clock source, also set <code>LSEEXT</code> to 1. For an analog source, set it to 0.</p>
+<p>If you choose this option, you can plug a clock source in of speeds <strong>up to 1 MHz.</strong></p>
+<p><strong>Note:</strong> when using the RTC with LSE bypass mode, the LSE must <strong>not</strong> be configured to use a digital clock signal, only an analog one.</p>
+<blockquote>
+<p><code>LSEON</code>, <code>LSEBYP</code>, <code>LSEEXT</code>, and <code>LSEDRV</code> are all located inside the <code>RCC_BDCR</code> register <em>(LSE is part of the backup domain - that's why)</em>.
+That register is write-protected by default. To modify it, set the <code>DBP</code> bit of the <code>PWR_CR1</code> register to 1.</p>
+</blockquote>
+<h3>External Resonator</h3>
+<p>The STM32H7RS boards all come with a 32.768 KHz X2 crystal, so you don't have to externally plug one in.</p>
+<p>If you want to use it, first* optionally set the <code>LSEDRV</code> bits inside <code>RCC_BDCR</code> for the driving capability:</p>
+<ul>
+<li><code>00</code> for lowest drive</li>
+<li><code>01</code> for medium-low drive</li>
+<li><code>10</code> for medium-high drive <em>(default after backup domain reset if <code>LSEON</code> = 0)</em></li>
+<li><code>11</code> for highest drive</li>
+</ul>
+<p>What 'driving capability' means is how much energy the circuit provides to the crystal to keep it oscillating. Just as perfect things don't really exist, crystals aren't perfect resonators meaning they lose some energy on each cycle. The higher the drive, the more energy provided to compensate for this loss and keep the crystal running - <strong>however,</strong> too high drive and the crystal's lifetime will shorten, too low drive and it may fail to start altogether.</p>
+<p>You need to find the balance, but how you do that is not something I know yet.</p>
+<p>Then, you need to set these bits:</p>
+<ul>
+<li><code>LSEON</code> = 1</li>
+<li><code>LSEBYP</code> = 0</li>
+</ul>
+<p><em>* Make sure you configure <code>LSEDRV</code> while <code>LSEON</code> is 0, not doing so will put your firmware outside of the technical specification and prone to undefined behaviour.</em></p>
+<p>If you use the on-board X2 oscillator provided by ST, that's all for this step, otherwise look at an official STMicroelectronics on how to connect your own crystal.</p>
+<h4>32.768 KHz?</h4>
+<p>Side note to the curious enough - <em>why such a specific value for the LSE?</em></p>
+<p>If you've worked with powers of 2 or standard integer sizes, you might almost immediatley realise that 32,768 is 2 to the power of 15. It's also half of a 16-bit integer <em>(which is 65,536)</em>, which I've become all too familiar with thanks to all of this bare-metal stuff...</p>
+<p>Simply put, having an oscillator which reliably and accurately generates 2^15 oscillations per second means you can do useful things like chain-divide the clock by 2, fifteen times in a row to get a perfect 1 KHz clock <em>(or divide the clock by 128, then by 256 - that's one way to do it on the STM32 since there aren't 15 dividers in a row to use).</em></p>
+<p>This makes it useful for the Real-Time Clock <em>(RTC)</em> in our situation.</p>
+<p>Also, 32.768 KHz is a 'perfect' enough frequency when it comes to compromising between size and power-consumption.</p>
+<p>It's actually one of the most <em>(if not the most)</em> used basic oscillator frequencies for electronics these days.</p>
+<h3>LSE Ready</h3>
+<p><code>LSERDY</code> is a flag which indicates whether the LSE has a valid clock source at <code>lse_ck</code> <em>(that's the actual clock source line which gets used)</em>. 4,096 valid cycles of the LSE need to be detected and <code>LSEON</code> needs to be 1 for <code>LSERDY</code> to go to 1, after which the RCC waits an extra 8 cycles before releasing the LSE's gate.</p>
+<p>When <code>LSERDY</code> goes to 1 an interrupt can be enabled using the <code>RCC_CIER</code> <em>(this can be done for all clocks, not just LSE)</em>.</p>
+<p>Just like HSE, LSE's control bits <strong>can not</strong> be modified while <code>LSEON</code> is 1.</p>
+<p>Unlike HSE, LSE stays on when entering STOP, STANDBY, and VBAT modes, as it's part of the backup domain.</p>
+<h3>LSE Programming Sequence</h3>
+<p>Here's how to modify the LSE's configuration through software:</p>
+<ol>
+<li>Allow writing by setting the <code>DBP</code> bit in <code>PWR_CR1</code></li>
+<li>Disable the LSE with <code>LSEON</code> = 1</li>
+<li>Wait for <code>LSERDY</code> to clear</li>
+<li>Configure <code>LSEBYP</code>, <code>LSEEXT</code>, and <code>LSEDRV</code> to your liking <em>(note that <code>LSEDRV</code> will only have an effect when using a crystal oscillator, not when using a clock signal)</em></li>
+<li>Set <code>LSEON</code> to 1 when ready</li>
+<li>Wait for <code>LSERDY</code> to turn to 1</li>
+<li>Clear <code>DBP</code> as it's not needed for now</li>
+</ol>
+<h2>High-Speed External (HSI)</h2>
+<p><em>Less accurate, high-speed.</em></p>
+<p>This is the default system clock after a reset. The benefits are that it's cheaper for the final product as it's integrated and removes the need of an external crystal, and it starts up faster than an external oscillator <em>(in microseconds)</em>. However it's less accurate than an external crystal, even when calibrated.</p>
+<p>For most regular firmware, the accuracy margin is small anyway and won't be an issue <em>(about 0.5% in either direction according to the datasheet)</em>, however the HSE is always there when accurate clocks are needed.</p>
+<h3>HSI Configuration</h3>
+<p>HSI's output frequency can be set at 8, 16, 32, or 64 MHz using a predriver <em>(the predriver is controlled by <code>HSIDIV</code>)</em>.</p>
+<p>As you might've guessed by now, it can also be switched on with the <code>HSION</code> bit set to 1.</p>
+<p>And just like with the other clocks, <code>HSION</code> can not be modified if <strong>any</strong> of these are true:</p>
+<ul>
+<li>HSI is used directly as the system clock</li>
+<li>HSI is used as reference for PLL1 and PLL1 is used as the system clock</li>
+<li>either of <code>XSPICKP</code>/<code>FMCCKP</code> is 1</li>
+</ul>
+<p><code>HSIDIV</code> also has some modification rules:</p>
+<ul>
+<li>can't be modified if HSI is used as reference for <strong>any</strong> enabled PLL</li>
+<li>can still be modified if HSI is directly used as a system clock</li>
+</ul>
+<p>As with the previous clocks, <code>HSIRDY</code> = 1 indicates the clock is ready and is no longer gated off. There is no clock on <code>hsi_ck</code> until it is set.</p>
+<p>When entering STOP mode, HSI can optionally be kept on. When entering STANDBY, it is turned off.</p>
+<h3>HSI Kernel Clock</h3>
+<p>When using peripherals that need a kernel clock, keep in mind:</p>
+<ul>
+<li>when exiting STOP mode via a kernel clock request, it takes time for the HSI to wake up</li>
+<li>HSI is less accurate than HSE, so for things like UART baud rate, it might be better to use HSE/LSE</li>
+</ul>
+<h3>HSI Calibration</h3>
+<p>The HSI is factory calibrated by STMicroelectronics, but you can recalibrate it based off what kind of environment your MCU will be in.</p>
+<p>You set these bits in the <code>RCC_HSICFGR</code>:</p>
+<ul>
+<li><code>HSICAL</code> <em>(12-bit field)</em></li>
+<li><code>HSITRIM</code> <em>(7-bit field)</em></li>
+</ul>
+<p><em>I'm not sure how calibrating itself works - it's not a feature I will realistically need for now, so I will update this section once I learn more about it.</em></p>
+<h2>Low-Power Internal (CSI)</h2>
+<p>Despite its seemingly random acronym derivation <em>(seriously, where did they actually get CSI from?)</em>, it's mostly similar to the HSI:</p>
+<ul>
+<li>Can be used as system clock, peripheral clock, or PLL input</li>
+<li>Low cost due to integrated crystal</li>
+<li>Similar, faster-than-HSE startup</li>
+<li>Less accurate than external crystal, even with calibration</li>
+</ul>
+<p>The main differences are that CSI is very low-power, which also means it runs at a lower clock speed. It's capable of 4 MHz while the HSI is capable of up to 64 MHz.</p>
+<h3>CSI Configuration</h3>
+<p>In a similar fashion to the others, CSI can be</p>
+<ul>
+<li>turned on/off with the <code>CSION</code> bit</li>
+<li>checked if it's on/off with the <code>CSIRDY</code> bit</li>
+<li>modified, as long as <code>CSION</code> is 0, it's not used as the system clock <em>(directly or indirectly)</em>, and <code>XSPICKP</code> and <code>FMCCKP</code> are 0</li>
+<li>optionally kept alive when the system enters SLEEP mode</li>
+</ul>
+<h3>CSI Kernel Clock</h3>
+<p>CSI wakes up faster than HSI, that's the main differentiator <em>(besides speed)</em> for its usage as a kernel clock.</p>
+<p>When using peripherals that need a kernel clock, keep in mind:</p>
+<ul>
+<li>when exiting STOP mode via a kernel clock request, it takes time for the CSI to wake up</li>
+<li>CSI is less accurate than HSE, so for things like UART baud rate, it might be better to use HSE/LSE</li>
+</ul>
+<h3>CSI Calibration</h3>
+<p>The CSI is factory calibrated by STMicroelectronics, but you can recalibrate it based off what kind of environment your MCU will be in.</p>
+<p><em>Just as the HSI Calibration section, this isn't something I see myself needing in any capacity for now, so I will update this section once I learn more about it.</em></p>
+<h2>HSI48 Oscillator</h2>
+<p>This is a clock which runs <em>(as accurately as it possibly can)</em> at 48 MHz. It can be used as a kernel clock for some peripherals.</p>
+<p>It has one main goal: be an accurate clock for full-speed USB peripherals by means of a special Clock Recovery System <em>(CRS)</em>.</p>
+<p><em>Warning before you read the rest: it will be filled with abbreviations and acronyms from the USB specification. I will not be explaining them because they take too long to understand - the specification is some 650 pages long and I spent 2 months learning about it, which still wasn't enough to get a fully working USB stack for a Raspberry Pi Pico I worked with. So you can read and skip over the keywords you don't understand.</em></p>
+<p>The CRS can use the USB SOF packets, the LSE, or an external signal to fine-tune the clock speed on-the-fly.</p>
+<p>Just like the HSI and CSI, it can be calibrated, and as someone who plans on using the USB at some point, it might not be too long until I read up on how it all works and update this article. Despite the calibration value changing with the CRS, every time the MCU has a power-on reset or exits STANDBY mode, it reloads the factory calibration value.</p>
+<p>And yet another list of rapid-fire trivia about the current oscillator:</p>
+<ul>
+<li>HSI48 is disabled when entering STOP/STANDBY modes</li>
+<li><code>HSI48ON</code> is used to turn it on/off</li>
+<li><code>HSI48RDY</code> is what indicates if it is on/off</li>
+<li>it can't be used as a system clock, so it can be modified without worrying about bricking the system <em>(phew...)</em></li>
+</ul>
+<h2>Low-Speed Internal (LSI)</h2>
+<p><em>Very low-power, slow oscillator.</em></p>
+<p>As you probably know, this is one of the clocks that's never disabled automatically when entering STOP/STANDBY modes. This is as it can be used for watchdog and Auto-Wakeup Unit <em>(AWU)</em> wake-ups from these modes. If the independent watchdow <em>(IWDG)</em> is on and running, LSI is forced on and <strong>can not</strong> be disabled, as a failsafe from bricking your MCU.</p>
+<p>It runs slowly, trying to keep at around 32 KHz.</p>
+<p>As with all clocks, here's more of the same copy-pasted information with the clock name changed</p>
+<ul>
+<li><code>LSION</code> turns it on/off</li>
+<li><code>LSIRDY</code> checks if it's on/off</li>
+<li>that's all for this one, most of the important info about it is above this list, so it's pretty minimal</li>
+</ul>
+<h2>Clock Security System (CSS)</h2>
+<p><em>Briefly mentioned before when saying the HSI can be a fallback for HSE/LSE. That's exactly the role of the CSS. Luckily not the web-dev CSS, I was glad to find out ;)</em></p>
+<p>The STM32H7RS is capable enough to detect a failure on the HSE/LSE external oscillators. In the event of such a failure, the CSS functionality kicks in to keep the system alive through a fallback.</p>
+<h3>CSS On HSE</h3>
+<p>Enabling CSS on HSE is done by setting the <code>HSECSSON</code> bit to 1, regardless of what the <code>HSEON</code> bit is.</p>
+<p>This seems counter-intuitive, but the CSS doesn't actually work if the HSE isn't on <em>(<code>HSERDY</code> is 0)</em>, which means it also doesn't work in STOP/STANDBY modes.</p>
+<p><code>HSECSSON</code> is also write-once-per-system-reset only, so once you write 1 to it, software is no longer able to directly clear it. It is automatically cleared by hardware when a system reset (<code>sys_rst</code>) happens or STANDBY is entered.</p>
+<p>When a failure is detected on the HSE, here's how it's handled:</p>
+<ol>
+<li><code>rcc_hsecss_fail</code> is set to 1</li>
+<li>if <code>STOPWUCK</code> is 0, HSI is enabled and selected as the system clock, otherwise the CSI is enabled and selected instead</li>
+<li>HSE is disabled</li>
+<li>if HSE output was used for any PLLs, said PLLs are also disabled</li>
+<li><code>XSPI1SEL</code>/<code>XSPI2SEL</code> bits switch to recovery position <em>(in the <code>RCC_CCIPR1</code> register)</em></li>
+<li><code>FMCSEL</code> goes to recovery position <em>(if PLL1/2 is disabled and FMCSEL is in position 1/2)</em></li>
+<li><code>rcc_hsecss_fail</code> is also sent to break the inputs of advanced-control timers <em>(TIM1, TIM15, TIM16, TIM17)</em></li>
+<li>NMI interrupt is generated <em>(one of the highest-priority interrupts)</em> so the MCU can run rescue operations*</li>
+<li>a tamper event can also be triggered for clearing backup SRAM/register contents</li>
+</ol>
+<p>** The interrupt is asserted until the <code>HSECSSF</code> bit is cleared, which can't be done directly as it's read-only. You clear it by writing 1 to <code>HSECSSC</code> in <code>RCC_CICR</code>.</p>
+<h3>CSS On LSE</h3>
+<p>Similar concept as the HSE - enable CSS with <code>LSECSSON</code>. This is different from the HSE CSS enable bit as when it is set actually matters. To enable <code>LSECSSON</code>, you need <code>LSEON</code>/<code>LSERDY</code> to be 1, and <code>RTCSEL</code> to have been chosen.</p>
+<p>Unlike <code>HSECSSON</code>, software is able to clear <code>LSECSSON</code> after a failure detection. It's cleared by a backup domain reset, be it hardware <em>(<code>rcc_vsw_rst</code>)</em> or software <em>(VSWRST)</em>.</p>
+<p>Not only that, but CSS can be rearmed for LSE, meaning software can decide to take action <em>(backup domain reset)</em> immediately, or only after several LSE failures.</p>
+<p>CSS on LSE works in all power modes: RUN/SLEEP/STOP/STANDBY/VBAT</p>
+<p>There are 2 flags the CSS can generate in failure events:</p>
+<ol>
+<li><code>LSECSSD</code>, which exists even in VBAT mode <em>(as its in the <code>RCC_BDCR</code> register)</em></li>
+<li><code>LSECSSF</code>, which generates an interrupt on failure, but doesn't persist in VBAT mode <em>(it's in the <code>RCC_CIFR</code> register)</em></li>
+</ol>
+<h3>Enabling LSE with CSS</h3>
+<p>This is the specification-approved method of enabling CSS on LSE:</p>
+<ol>
+<li>Follow the standard LSE enabling procedure from the <strong>Low-Speed External (LSE)</strong> section above, <strong>except</strong> the last step where you set <code>DBP</code> to 0</li>
+<li>Select LSE clock with <code>RTCSEL[1:0]</code></li>
+<li>Enable CSS on LSE with <code>LSECSSON</code></li>
+<li>Now set <code>DBP</code> to 0 if you want to write-protect <code>RCC_BDCR</code></li>
+</ol>
+<h3>LSE Failures</h3>
+<p>In the event of an LSE failure, the CSS executes the following actions:</p>
+<ol>
+<li>Stop using LSE to clock RTC</li>
+<li><code>RTCSEL</code>/<code>LSECSSON</code>/<code>LSEON</code> are all left <strong>unchanged</strong> by the hardware</li>
+<li><code>rcc_lsecss_fail</code> event is generated which can be used by the firmware to wake up from STANDBY, and to protect the backup SRAM/registers through a tamper event <em>(which is generated even in VBAT mode)</em></li>
+<li><code>LSECSSF</code> interrupt flag is activated to generate the <code>rcc_lsecss_it</code> interrupt, except in VBAT mode</li>
+<li><code>LSECSSD</code> is also set</li>
+</ol>
+<blockquote>
+<p>The Nucleo-STM32H7RS reference manual also outlines 3 possible ways to handle LSE failure, have a look on page 367 if you want them, otherwise give your own implementation a crack!</p>
+</blockquote>
+<h2>Clock Output (MCO1/MCO2)</h2>
+<p>These are configurable clock output pins. You can take any clock as source <em>(HSE/HSI/LSE/LSI/CSI/PLL1/PLL2/HSI48)</em> and output it on one of these pins. The clock source can also be divided prior to being output.</p>
+<p>Note that you can't just <em>'use'</em> MCO outputs on a pin directly, you have to set the pin's GPIO alternate function.</p>
+<p>You can configure the outputs within the <code>RCC_CFGR</code> register, looking out for the <code>MCO1PRE</code>, <code>MCO1SEL</code>, <code>MCO2PRE</code>, and <code>MCO2SEL</code> bits. <code>MCOxPRE</code> are the dividers <em>(prescalers)</em>, and they're 4-bit regions, so the maximum division</p>
+<p>Whatever you use them for, just bear in mind:</p>
+<ol>
+<li>They can only be active in RUN/STOP modes</li>
+<li>They're limited by the maximum pad speed, which is board-specific and you should consult your board's datasheet when you need to know this information</li>
+</ol>
+<h3>Duty Cycle</h3>
+<p><em>Duty Cycle</em> means what % of the time a signal is high compared to the total time of the signal's period.</p>
+<p>E.g. if a signal is <strong>10us</strong> long and it's high for <strong>6us</strong>, it's a duty cycle of <strong>6/10</strong> as a percentage - so <strong>60%.</strong></p>
+<p>The duty cycle of the <code>MCO1PRE</code>/<code>MCO2PRE</code> dividers aims to be as close to 50% as possible. I say <em>aims to be</em> because for even values, it is, but for odd values it is not due to this formula:</p>
+<pre><code>Duty Cycle (%) = (floor((MCO * PRE) / 2) / (MCO * PRE)) * 100
+</code></pre>
+<p><em>I recommend writing it out on paper to properly visualise it, it's a bit odd in a single line with no formatting.</em></p>
+<h2>Phase-Locked Loop (PLL)</h2>
+<p><em>You may need to re-read this section a few times to really get it. I find that understanding how something works helps me more when using it later on, and it took me a whole evening to finally get that &quot;Eureka!&quot; moment and actually understand how the PLL works. I also recommend having the PLL block and the top-level clock tree diagrams up on another screen or something.</em></p>
+<p>At its core, the PLL takes a clock signal and produces a new signal from it. The new signal is locked in phase to the reference <em>(hence Phase-Locked Loop)</em>, meaning that if the reference clock's frequency changes, so will the PLL's output frequency.</p>
+<p>If it didn't exist, the system and peripherals would be unable to run any faster than the raw frequency generated by clocks like the HSE/HSI. As you know, those run at speeds up to 64 MHz on the H7RS, yet the H7RS is able to achieve a maximum clock speed of 600 MHz. That's thanks to the PLL.</p>
+<p>And as the <em>'Loop'</em> part of the name implies, it's a loop rather than a multiplier circuit.</p>
+<p>The most basic loop is:</p>
+<ol>
+<li>Phase comparator</li>
+<li>Loop filter</li>
+<li>VCO</li>
+</ol>
+<p>This is Wikipedia's version of a minimal PLL, the STM32's PLL also includes a 4th component: <strong>feedback divider</strong>.</p>
+<p>There is also an input <em>(reference)</em> clock called Vi, and an output clock called Vo.</p>
+<h3>Phase Comparator</h3>
+<p>This can also be called a phase detector, but I think 'comparator' the better name for it given its role, which can be confusing at first.</p>
+<p>It compares the phases* of Vi and Vo <em>(Vo coming from the VCO's output)</em> by looking at rising/falling edges.</p>
+<p>After that, it determines whether Vo needs to speed up or slow down, and outputs a charge in accordance to that <em>(the VCO's output frequency is determined by the input voltage - see the VCO section below)</em>.</p>
+<p><em>* I still can't fully wrap my head around a 'phase', but from what I understand right now, it's a slightly abstract term for &quot;what part of the clock period are we in right now?&quot; It's a little bit like a digital clock you use to tell the time - it's not exactly 14:27 right now, it's actually 14:27:53 - the latter part (the seconds) are the 'phase', telling you how long ago it became 14:27. The phase resets as soon as the seconds hit 60, flipping back to 0 and the clock going to 14:28. Just apply that to clock periods - the clock isn't just 1 right now, it became 1 a certain amount of time ago (e.g. just became one, or about to change to 0).</em></p>
+<p>That digital clock analogy above also explains another part of PLLs nicely: when two clocks are both 14:27, they're not necessarily phase-locked yet; one of them might become 14:28 tens of seconds before the other, they might even only be 14:27 at the same time for a single second. For two clocks to be fully phase-locked, they need to be on the same second, meaning they become 14:27 and stop being 14:27 at the exact same time.</p>
+<p>Again, extrapolate that to oscillator clocks: two clocks might both be 1 at the same time, but it doesn't necessarily mean they're phase-locked; one might have just changed from 0 to 1, while the other is about to flip back from 1 to 0. In order to be phase-locked, they need to switch from 0-to-1 and 1-to-0 at the exact same time, which is what the phase comparator actually watches out for and outputs a charge to adjust the VCO.</p>
+<h3>Loop Filter</h3>
+<p>This is more straightforward than the phase comparator, it just takes the charge output from the phase comparator and stabilises it for the VCO so they don't kick the VCO's output frequency around.</p>
+<h3>VCO</h3>
+<p>Voltage Controlled Oscillator - it's an oscillator which changes its frequency based off how much voltage is supplied to it. It feeds its output Vo back into the phase comparator to be compared against Vi, keeping the loop an actual loop.</p>
+<h3>Feedback Divider</h3>
+<p>Sits between the VCO and phase comparator, dividing the raw Vo before it's fed back in.</p>
+<p>Its purpose is pretty intuitive - if you only compared Vi to raw Vo, then the loop will settle down once their frequencies are the same, which will make the PLL just an extremely elaborate wire.</p>
+<p>When you divide Vo <em>(e.g. by 2)</em>, it makes the comparator think the output is half as slow as the input, and it sends a lot of extra charge to the VCO so it can speed up. Of course, the VCO is already running at the same speed as Vi, and with the newly-supplied charge, it now runs 2x faster.</p>
+<p>So, <code>Vo = 2 x Vi</code>. If Vi is 8 Mhz, you've successfully output a 16 MHz clock just by dividing Vo by 2.</p>
+<p>Divide it by 16, that turns an 8 MHz Vi into a 128 MHz Vo.</p>
+<h3>Why Not Just Use A Faster Crystal Oscillator?</h3>
+<p>That's a very valid question, and it's made more valid by the fact that a VCO <em>can</em> run at a higher speed than the one you want to produce.</p>
+<p>Why use a 8 MHz reference clock and a VCO to produce a 128 MHz clock instead of just using a 128 MHz clock in the first place?</p>
+<p>Well it's expensive...</p>
+<p>Crystal oscillators are exactly that - crystals. In order to increase their frequency, they need to be cut into thinner and thinner slices, which makes them fragile besides being very difficult and expensive to do.</p>
+<p>A low MHz crystal <em>(like our 8 MHz one)</em> is cheap and readily available.</p>
+<p>The VCO <em>(as you'll see soon)</em> is able to run at about <strong>1.6 GHz</strong> on the STM32H7RS, so a wide range of frequencies can be synthesised via the PLL.</p>
+<p><em>&quot;But the VCO runs at 1.6 GHz, you just said those crystals are expensive!&quot;</em></p>
+<p>And that's the genius part of the PLL - <em>the VCO isn't a crystal</em>, it's just a bunch of resistors, capacitors, and signal inverters bunched together, and when you consider that a modern computer has up to a few billion of each of these components for just £1,000-2,000, you can see how inexpensive a VCO can be.</p>
+<p>And the power of the crystal + PLL circuit lies in the fact that it combines the pros of both a crystal oscillator and a VCO:</p>
+<ul>
+<li>the crystal oscillator is highly accurate and reliable, but is slow</li>
+<li>the VCO can generate insanely high speeds, but is inaccurate</li>
+</ul>
+<p>It's such a good way of producing high clock speeds, that modern computers even use this method <em>(base clock + PLLs)</em>!</p>
+<p>Not fully necessary to know this, just an answer to <em>&quot;why do it this way?&quot;</em></p>
+<h2>STM32H7RS PLLs</h2>
+<p>Now that we know what a PLL actually is and what it does, here is the STM-specific information and how to use them.</p>
+<p>The H7RS RCC has 3 PLLs:</p>
+<ul>
+<li><strong>PLL1</strong>, usually used to clock the CPU, buses, and some peripherals</li>
+<li><strong>PLL2</strong>, usually used to clock XSPI/SDMMC, and some peripherals</li>
+<li><strong>PLL3</strong>, dedicated to kernel clock generation for peripherals</li>
+</ul>
+<p>They're all also independent of each other, and all have:</p>
+<ul>
+<li>VCOs which support:
+<ul>
+<li>wide-range</li>
+<li>low-range <em>(for audio applications)</em></li>
+</ul>
+</li>
+<li>Input frequency range:
+<ul>
+<li>2-16 MHz for the VCO in wide-range mode</li>
+<li>1-2 MHz for the VCO in low-range mode</li>
+</ul>
+</li>
+<li>VCO frequency range:
+<ul>
+<li>384-1672 MHz in high-range mode <em>(VCOH)</em> before the divider <em>(the divider that feeds back into the comparator)</em></li>
+<li>150-420 MHz in low-range mode <em>(VCOL) - the recommended option for power consumption</em></li>
+</ul>
+</li>
+<li>PLLs offer up to 5 outputs, each with their own dividers</li>
+</ul>
+<p>The <em>VCOH</em> and <em>VCOL</em> VCOs aren't just different 'modes' of the same VCO, they're two different VCOs on each PLL which can be selected with the <code>PLLxVCOSEL</code> bit. This makes the PLL even more flexible.</p>
+<p>The input frequency for the PLL <em>(<code>refx_ck</code>)</em> must be between 1-16 MHz, and the dividers in <code>RCC_PLLCKSELR</code> need to be configured to ensure this range, and the rough input frequency needs to be selected in the <code>RCC_PLLCFGR</code> register using the <code>PLLxRGE</code> bit to guarantee an optimal performance <em>(on the RCC clock tree, this range corresponds to the <code>refx_ck</code> clock)</em>.</p>
+<h3>Configuring The PLLs</h3>
+<p><em>Figure 48 from RM0477 - PLL block diagram</em>
+<img src="./assets/figure_48-pll_block_diagram.png" alt="STM32H7RS PLL block diagram" /></p>
+<p>Each individual PLL can be turned on via its respective <code>PLLxON</code> bit, where you write 1 to turn it on <em>(the <code>x</code> means which PLL, so 1-3)</em>.</p>
+<p>Once the PLL has stabilised <em>(term for this is 'locked')</em>, the <code>PLLxRDY</code> bit is set. This is all a lot like the clocks so far.</p>
+<p>You also need to program the <code>DIVN</code> divider to get your expected VCO output frequency, <strong>keeping in mind</strong> the VCO's output range listed above.</p>
+<p>The VCOH output also runs through a '÷2' divider so it has a duty cycle of 50% for any dividers it feeds into from here-on-out. The VCOL doesn't have this divider, it feeds directly to the configurable dividers after it.</p>
+<p>These 'configurable dividers' come right after the VCO output <em>(attached to the <code>vcox_ck</code> line)</em>, and here they are:</p>
+<ul>
+<li><strong>DIVP:</strong> divides from 1-128</li>
+<li><strong>DIVQ:</strong> divides from 1-128</li>
+<li><strong>DIVR:</strong> divides from 1-128</li>
+<li><strong>DIVS:</strong> divides from 1-8</li>
+<li><strong>DIVT:</strong> divides from 1-8</li>
+</ul>
+<p>The dividers are mostly pretty standard and unassuming, with the exception of PLL1's DIVP divider. Out of all the PLLs and all the dividers, this is the only one which can be used as a <code>sys_ck</code> <em>(system clock)</em> source. It is the only way for the system clock to be powered by a PLL.</p>
+<p>And each of them has their own <code>DIVxEN</code> bit so they can be turned on, and they can be modified without turning the PLL off simply by setting <code>DIVxEN</code> to 0.</p>
+<p><strong>Note that Figure 48 shows them as <code>DIVxEN</code>,</strong> but in reality they're actually called <code>PLLxyEN</code>, where <code>x</code> is the PLL number and <code>y</code> is the divider letter. They all live inside the <code>RCC_PLLCFGR</code> register on the STM32H7RS.</p>
+<p>The output line from each of these dividers is called <code>pllx_y_ck</code>, where again <code>x</code> is the PLL number, and <code>y</code> is the divider letter.</p>
+<p><em>Figure 48 from RM0477 above has all dividers and their locations displayed.</em></p>
+<h3>50% Duty Cycle</h3>
+<p>In order to ensure the PLL outputs a clock with a 50% duty-cycle <em>(if you need that)</em>, there are 3 ways to make it possible:</p>
+<ol>
+<li>Post-dividers <em>(DIVP-DIVT)</em> are dividing by an even value</li>
+<li>VCOH is used and post-dividers are bypassed <em>(they divide by 1)</em></li>
+<li>VCOH is selected and the post-dividers DIVS/DIVT are used</li>
+</ol>
+<h3>PLL Programming</h3>
+<p>This is mostly a checklist provided by STMicroelectronics to ensure good usage of the PLLs so you don't experience unusual bugs:</p>
+<ul>
+<li>Before enabling a PLL on, ensure the reference clock <code>refx_ck</code> is stable and in a proper range to act as the input</li>
+<li>When a PLL is unused, all <code>DIVxEN</code> and <code>DIVx</code> bits for it should be cleared <em>(this is for power saving)</em></li>
+<li>Before disabling a PLL, ensure all of its <code>PLLxPEN</code>/<code>PLLxQEN</code>/<code>PLLxREN</code>/<code>PLLxSEN</code>/<code>PLLxTEN</code> bits are cleared</li>
+<li>Just like the last point <em>(but in reverse)</em>, those bits should only be set to 1 <strong>after</strong> the PLL has been enabled and has signalled it's ready</li>
+</ul>
+<h3>PLL Protections</h3>
+<p>To prevent you from doing catastrophic things to your software and potentially hardware, these protections are in place:</p>
+<ul>
+<li>You <strong>can not</strong> change DIVMx*, DIVN, PLLxRGE, and PLLxVCOSEL when the corresponding PLL is on <em>(<code>PLLxON</code> = 1)</em></li>
+<li>You <strong>can not</strong> change PLLSRC** when <strong>any</strong> PLL is on</li>
+<li>You <strong>can not</strong> change DIVx when DIVxEN is set to 1 - just remember it was actually PLLxyEN on the <code>RCC_PLLCFGR</code> register, I'm just using the terms from Figure 48</li>
+<li>You <strong>can not</strong> clear PLL1ON or PLL1PEN if PLL1 is currently used to deliver the system clock - Table 62 from RM0477 <em>(shown below)</em> lists other clock protections</li>
+</ul>
+<p><img src="./assets/table_62-clock_protection_summary.png" alt="STM32H7RS clock protection" /></p>
+<h3>PLL Misc.</h3>
+<p>Some extra notes before we move on:</p>
+<ul>
+<li>PLLs are disabled in STOP/STANDBY power modes</li>
+<li>PLLs which use HSE as their reference clock are also disabled in the event of a HSE failure</li>
+<li>the clock <code>refx_ck</code> is provided to PLLx when the corresponding PLLxON bit is set to 1</li>
+<li>PLLs can work in 3 different modes:
+<ol>
+<li>integer mode</li>
+<li>fractional mode</li>
+<li>spread spectrum mode</li>
+</ol>
+</li>
+</ul>
+<p><em>The RM0477 pages for these 3 PLL modes look extremely complicated at first, but they might be just about the simplest part of the whole RCC haha!</em></p>
+<p>Integer mode is for when you want to multiply the reference clock by a whole-number DIVN <em>(2, 3, 4)</em>, while fractional mode is for when you want to generate a floating-point DIVN <em>(6.625, 3.125)</em>, but with a twist - it doesn't actually multiply by a fractional number, instead it rapidly alternates between multiplying by the two closest integer values it can <em>(e.g. to multiply by 3.125, it'll multiply by 3 and 4 in the right proportion to get a long-term average of 3.125)</em>.</p>
+<p>This obviously causes a slightly jittery clock as it never lands on a concrete value, it always swaps between two, which <em>can</em> be a problem if you need a perfectly stable clock for someting.</p>
+<p>Spread spectrum mode is an extensions of fractional mode, but instead of the jittery clock being a bug, it's now a feature!</p>
+<p>I'll spare the details of EMI for potentially another article, but in short, having a clock that runs at one specific frequency can cause a device to not be approved by regulatory bodies like the FCC because these frequencies can cause noise for other devices if the other devices scan for this specific frequency. This looks like a big peak on the EMI reader.</p>
+<p>So instead of having a clock which runs at one specific frequency, spread spectrum mode deliberately creates jitter to reduce the one big peak into multiple smaller ones and make the device fit within regulations. It's a fascinating topic that makes you realise wireless communications aren't as magical and foreign as they might appear, so if you're interested I highly recommend you learn more about it!</p>
+<p><em>* I haven't mentioned 'DIVMx' yet - that's just the divider which sits between the PLL source clock and the PLL itself, dividing the source clock by a value between 1 and 63 inclusive, or 0 to disable it. It's in the <code>RCC_PLLCKSELR</code> register.</em></p>
+<p><em>** Another one I didn't mention explicitly - it selects which clock source between HSI, HSE, and CSI (or none) gets used as the reference clock for all 3 PLLs (which is why all 3 must be disabled to change this). Also in the <code>RCC_PLLCKSELR</code> register.</em></p>
+<h4>PLL Integer Mode</h4>
+<p><em>Keep this in mind for these sections: DIVN is what you divide the VCO output by before it gets fed back into the comparator, you already knew that - except it's actually not just DIVN, it's DIVN.FRACN (that's a floating point number where the whole-number part is DIVN and the fractional part is FRACN). But because we're in integer mode, FRACN is 0, which makes DIVN.FRACN just DIVN.0, and any value of DIVN turns DIVN.0 into a whole number (e.g. if DIVN = 4, DIVN.FRACN = 4.0 = 4), so FRACN is omitted.</em></p>
+<p>On Figure 48, you'll see something called the &quot;SDM&quot; <em>(Sigma Delta Modulator)</em>.</p>
+<p>The PLL is configured in integer mode when the SDM is loaded with a 0 and <code>PLLxSSCGEN</code> = 0 <em>(SS = Spread Spectrum)</em>.</p>
+<p>However, loading a 0 into the SDM isn't as simple as a single atomic operation, you need to:</p>
+<ol>
+<li>write <code>PLLxFRACEN</code>* to 0, which disables updating of the fractional part of DIVN.FRACN</li>
+<li>write <code>FRACN</code> to 0, which is the fractional part of DIVN.FRACN for the VCO's output <em>(so this turns it to a whole number)</em></li>
+<li>write <code>PLLxFRACEN</code> to 1 to latch new new fractional part</li>
+<li>wait at least 5 us <em>(microseconds)</em> for it to actually reflect</li>
+</ol>
+<p>The overview of this process becomes simpler when you see these formulas:</p>
+<pre><code>FVCO = 2 * Fref_ck * (DIVN + 1)     // for VCOH mode
+FVCO = Fref_ck * (DIVN + 1)         // for VCOL mode
+
+Fpll_x_ck = FVCO / (2 * (DIVx + 1)) // for VCOH mode, where x = P, Q, R, S, or T
+Fpll_x_ck = FVCO / (DIVx + 1)       // for VCOL mode, where x = P, Q, R, S, or T
+</code></pre>
+<p>Basically, your output <code>pll_x_ck</code> is just a simple maths formula. <code>FRACN</code> is 0 because you're dividing by an integer.</p>
+<p><em>* I had a few minutes of confusion here, RM0477 calls it <code>PLLxFRACLE</code> on page 372, then calls it <code>PLL2FRACLEN</code> on the register diagram on page 440 and 442 (specifically for PLL2) and <code>PLLxFRACEN</code> for PLL1 and PLL3. In reality it's called <code>PLLxFRACEN</code> (which it correctly uses for PLL1 and PLL3), as I confirmed using the stm32h7s3xx.h file from the HAL, so use that naming in your code.</em></p>
+<h4>PLL Fractional Mode</h4>
+<p><em>This has the same underlying concept as integer mode, except FRACN is no longer 0.</em></p>
+<p>Here's how to configure the SDM for *(pseudo-)*fractional division:</p>
+<ol>
+<li>write <code>PLLxFRACEN</code>* to 0, which disables updating of the fractional part of DIVN.FRACN</li>
+<li>write <code>FRACN</code> to a non-zero value, which is the fractional part of DIVN.FRACN for the VCO's output</li>
+<li>write <code>PLLxFRACEN</code> to 1 to latch new new fractional part</li>
+<li>wait at least 5 us <em>(microseconds)</em> for it to actually reflect</li>
+</ol>
+<p>In order to actually use the PLL in fractional mode, you must first initialise DIVN before enabling the PLL.</p>
+<p>Formulas, these are very similar to the integer ones with the FRACN part just bolted-on:</p>
+<pre><code>FVCO = 2 * Fref_ck * (DIVN + 1 + (FRACN / 2^13))    // for VCOH mode
+FVCO = Fref_ck * (DIVN + 1 + (FRACN / 2^13))        // for VCOL mode
+
+Fpll_x_ck = FVCO / (2 * (DIVx + 1)) // for VCOH mode, where x = P, Q, R, S, or T
+Fpll_x_ck = FVCO / (DIVx + 1)       // for VCOL mode, where x = P, Q, R, S, or T
+</code></pre>
+<h4>PLL Spread Spectrum Mode</h4>
+<p>As I explaned above, this deliberately generates a varied/jittery clock to reduce EMI outputs at one specific frequency.</p>
+<p>The way you enable it is by keeping SDM loaded with a 0 and turning <code>PLLxSSCGEN</code> to 1, and the PLL must be using VCOH.</p>
+<p><img src="./assets/figure_49-center_spread.png" alt="Triangular wave diagram" /></p>
+<p>Spread spectrum affects the frequency over time in a triangle wave form <em>(image below)</em>.</p>
+<p>The reason for a triangle wave is because it provides the most linear change over time - besides the peaks and dips, the line is always linearly changing - which spreads EMI emissions more evenly unlike other waves, such as sin/cos, which tend to concentrate the emissions around a particular point.</p>
+<p>And there's also a 2nd version of the above triangular wave. Here are both of them:</p>
+<p><img src="./assets/figure_49-spread_spectrum_modulation.png" alt="Triangular wave diagram" /></p>
+<p>In both, ‘Fn' is the baseline frequency <em>(e.g. 400 MHz)</em>. In center-spread mode <em>(shown on the left)</em>, the frequency goes up and down <strong>around the baseline</strong> by an equal amount <em>(e.g. 398-402 MHz)</em>. In down-spread mode, the frequency only goes down, <strong>twice as much</strong> below the baseline as it would in center-spread mode <em>(e.g. 396-400 MHz)</em>.</p>
+<p>The way you pick which one you want is by asking <em>”Am I okay with the frequency occasionally hovering above the baseline frequency value?”</em></p>
+<h4>Configuring Spread Spectrum Mode</h4>
+<p>Inside of <code>PLLx_SSCGR</code> are the following bits:</p>
+<ul>
+<li><code>MODPER</code>: adjusts modulation frequency <em>(‘Fmod' is the above image)</em></li>
+<li><code>INCSTEP</code>: adjusts modulation depth <em>(‘Md' in the above image)</em></li>
+<li><code>SPREADSEL</code>: defines if spread is center-spread or down-spread</li>
+</ul>
+<p>Modulation frequency is related to the horizontal distance between 2 consecutive peaks on the triangle wave <em>(it's actually inversely proportional, but still related - see formulas below)</em>.</p>
+<p>Modulation depth is the vertical distance from the middle of the wave to the peak.</p>
+<p>Here's how <code>MODPER</code> and <code>INCSTEP</code> are related to modulation frequency/depth:</p>
+<p><img src="./assets/figure_50-triangular_waveform_generator.png" alt="Figure 50. Triangular waveform generator" /></p>
+<h4>Spread Spectrum Formulas</h4>
+<p>Modulation frequency:</p>
+<pre><code>Fmod = Fck_ref / (4 * MODPER)   // so as MODPER increases, Fmod decreases
+</code></pre>
+<p>The datasheet for your specific STM32 H7RS contains the recommended modulation frequency range.</p>
+<p>Modulation depth:</p>
+<pre><code>Md (%) = (MODPER * INCSTEP * 100 * 5) / ((2^15 - 1) * (DIVN + 1))   // as both MODPER and INCSTEP increase, Md increases
+</code></pre>
+<p>The formula for <code>Md</code> has one constraint:</p>
+<ul>
+<li><code>MODPER * INCSTEP</code> <strong>must not</strong> exceed <code>2^15 - 1</code></li>
+</ul>
+<h4>Setting Up Spread-Spectrum Mode</h4>
+<ol>
+<li>Set up integer mode as described in the integer mode section slightly above</li>
+<li>Compute the values of MODPER and INCSTEP you want <em>(remember to turn them into integers, that's what the register fields take)</em></li>
+<li>Check <code>MODPER * INCSTEP</code> does not exceed <code>2^15 - 1</code></li>
+<li>DIVP, Q, R, S, or T can be adjusted to your target configuration</li>
+<li>Enable spread-spectrum mode by setting <code>PLLxSSCGEN</code> to 1 and enabling the corresponding PLLx</li>
+</ol>
+<p>If you see Figure 50 above, you'll notice the y-axis has <code>Fmax</code>, <code>Fc</code>, and <code>Fmin</code> - those are the frequencies you can expect in spread-spectrum mode.</p>
+<p>They're calculated like this <em>(mostly for your own sanity checks)</em>:</p>
+<pre><code>// if SPREADSEL = 0 (center-spread)
+Fmax = Fc * (1 + (Md / 100))
+Fmin = Fc * (1 - (Md / 100))
+Fc = same formula as the one you use for integer mode, depending on which VCO is in use
+
+// if SPREADSEL = 1 (down-spread)
+Fmax = same formula as the one you use for integer mode, depending on which VCO is in use
+Fmin = Fmax * (1 - (2 * (Md / 100)))
+Fc = Fmax * (1 - (Md / 100))
+</code></pre>
+<p>When it says <em>same formula as the one you use for integer mode</em>, it's talking about the <code>VCO</code> one, not the <code>Fpll_x_ck</code> one.</p>
+<h3>Aaaannnddd... That's It For PLLs!</h3>
+<p>What a long section!</p>
+<p>For mine and your sanity's sake in the future, just make sure you look at the PLL block diagram when working with them.</p>
+<h2>More On <code>sys_ck</code></h2>
+<p>The system clock source is used to derive the clocks of many important parts of the board, namely:</p>
+<ul>
+<li>CPU</li>
+<li>SysTick</li>
+<li>Peripheral buses <em>(AXI, APB, AHB)</em></li>
+</ul>
+<p>Clock sources for <code>sys_ck</code> are only switched when the oscillator is stable or the PLL is locked, depending on which source is chosen.</p>
+<p>The <code>SWS</code> status bit in <code>RCC_CFGR</code> indicates which clock is currently chosen. The <code>RCC_CR</code> status bits indicate which clock sources are stable and ready to be used, should you want to switch.</p>
+<p>Now with all of this you might start to imagine <code>sys_ck</code> as a line that just goes into the CPU and gets used as the clock. But that's actually wrong. Figure 51 below shows the structure including the dividers.</p>
+<p>As you can see, in order to get to the CPU, <code>sys_ck</code> has to pass through CPRE, which divides it by 1-512. This division also directly affects the peripheral buses <em>(as they're downstream from this divider)</em>. In the same way, BMPRE is used to divide the AXI/AHB buses, but it also affects the APB bus.</p>
+<p>Bear these in mind when designing your clock tree, or use STM32CubeMX as it has a fantastic visualisation tool for the clocks <em>(I know, both of us probably enjoy register-level programming without any abstractions, but you have to admit when a tool makes the workflow much more effective!)</em></p>
+<p><img src="./assets/figure_51-core_and_bus_clock_generation.png" alt="Figure 51 - Core and bus clock generation" /></p>
+<h2>Sources</h2>
+<p><a href="https://www.st.com/content/ccc/resource/training/technical/product_training/group0/81/96/f3/1a/55/d9/40/52/STM32H7-System-Reset_and_clock_control_RCC/files/STM32H7-System-Reset_and_clock_control_RCC.pdf/_jcr_content/translations/en.STM32H7-System-Reset_and_clock_control_RCC.pdf">STMicroelectronics - STM32H7 RCC Presentation</a>
+<a href="https://www.st.com/resource/en/reference_manual/rm0477-stm32h7rx7sx-armbased-32bit-mcus-stmicroelectronics.pdf">STMicroelectronics - STM32H7S3L8 Reference Manual</a>
+<a href="https://www.st.com.cn/content/ccc/resource/training/technical/product_training/group1/e3/f2/44/65/3f/04/40/4c/stm32h7rs-system-power-control-pwr/files/stm32h7rs-system-power-control-pwr.pdf/jcr:content/translations/en.stm32h7rs-system-power-control-pwr.pdf">STMicroelectronics - STM32H7RS PWR Controller Presentation</a>
+<a href="https://www.google.com/url?sa=t&amp;source=web&amp;rct=j&amp;opi=89978449&amp;url=https://www.st.com/resource/en/user_manual/um3276-stm32h7rx7sx-nucleo144-board-mb1737-stmicroelectronics.pdf&amp;ved=2ahUKEwjy8JbB7MKVAxW6QUEAHdC6OCkQFnoECCUQAQ&amp;usg=AOvVaw3icPBpnF7I0A3ji_WkJSpv">STMicroelectronics - STM32H7RS User Manual</a>
+<a href="https://deepbluembedded.com/stm32-rcc-clock-configuration-ultimate-guide/">Deepblue Embedded - STM32 RCC Clock Configuration – Ultimate Guide</a>
+<a href="https://community.st.com/stm32-mcus-embedded-software-32/hal-flash-ob-launch-function-trigger-software-reset-161257">ST Forums - HAL_FLASH_OB_Launch function trigger software reset</a>
+<a href="https://dictionary.cambridge.org/dictionary/english/oscillating">Cambridge Dictionary - Oscillating</a>
+<a href="https://en.wikipedia.org/wiki/Phase-locked_loop">Wikipedia - Phase-Locked Loop</a>
+<a href="https://en.wikipedia.org/wiki/Voltage-controlled_oscillator">Wikipedia - Voltage-Controlled Oscillator</a>
+<a href="https://community.altera.com/discussions/fpga-device/pll-integer-mode-vs-fractional-modes-in-plls-cyclone10-transceiver/263264">Altera Forum - PLL Integer mode vs Fractional modes in PLLs</a></p>
+            </main>
+        </div>
+
+        <script src="../script.js"></script>
+    </body>
+</html>
