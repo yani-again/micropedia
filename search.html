@@ -7,6 +7,7 @@
         <title>Search MicroPedia</title>
         <link rel="stylesheet" href="./reset.css">
         <link rel="stylesheet" href="./style.css">
+        <link rel="stylesheet" href="./search.css">
         <link rel="icon" href="./favicon.ico" type="image/x-icon">
     </head>
     <body>
@@ -29,9 +30,22 @@
         </div>
 
         <div id="main">
-            <h1>Page under construction</h1>
+            <div id="found-articles">
+                <h2>Found Articles</h2>
+                <div id="not-found">
+                    <span>Uh oh! Nothing was found based off your search. Try only searching one word at a time or looking through all articles below</span>
+                </div>
+                <div id="blank-search">
+                    <span>blank search!</span>
+                    <span>You didn't search for anything :P</span>
+                </div>
+            </div>
+
+            <div id="articles">
+                <h2>All Articles</h2>
+            </div>
         </div>
 
-        <script src="script.js"></script>
+        <script src="search.js"></script>
     </body>
 </html>

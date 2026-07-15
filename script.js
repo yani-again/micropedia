@@ -27,6 +27,15 @@ h2_titles.forEach(h2 => {
     contents_wrapper.appendChild(link);
 });
 
+// last edited
+let last_edited = document.querySelector("#last-edited").innerText;
+let main_container = document.querySelector("main");
+let last_edited_target = document.createElement("span");
+last_edited_target.innerText = "Last edited: " + last_edited;
+last_edited_target.id = "last-edited-target";
+
+main_container.children[0].after(last_edited_target);
+
 
 // cookies
 if (!document.cookie.includes("hide-disclaimer="))
@@ -76,3 +85,14 @@ source_paragraphs.forEach(p => {
         p.classList.add("link-list");
     }
 });
+
+
+// for recent.txt recent articles
+async function load_recent() {
+  const res = await fetch('../recent.txt');
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+  const text = await res.text();
+  return text.split('\n').filter(Boolean);
+}
+

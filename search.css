@@ -1,0 +1,35 @@
+#not-found, #blank-search {
+    display: none;
+}
+.visible {
+    display: initial !important;
+}
+
+#main {
+    display: flex;
+    flex-direction: column;
+}
+
+#articles, #found-articles {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+#articles a, #found-articles a {
+    display: block;
+    width: 100%;
+    color: black;
+    background-color: var(--lightgray);
+    text-decoration: none;
+    cursor: pointer;
+    padding: 10px 20px;
+    border-radius: 10px;
+
+    transition: background-color 200ms ease-in-out;
+}
+
+#articles a:hover, #found-articles a:hover {
+    background-color: var(--gray);
+}

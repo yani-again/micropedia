@@ -5,6 +5,7 @@
     --border-color: #00000033;
 
     --gray: #dddddd;
+    --lightgray: #e8e8e8;
 
     --warn: #ba1323;
     --warn-bg: #dc35452f;
@@ -91,4 +92,28 @@ pre {
     border-radius: 15px;
     background-color: var(--gray);
     border: 1px solid var(--darkgray);
+}
+
+#recent-articles {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+#recent-articles a {
+    display: block;
+    width: 100%;
+    color: black;
+    background-color: var(--lightgray);
+    text-decoration: none;
+    cursor: pointer;
+    padding: 10px 20px;
+    border-radius: 10px;
+
+    transition: background-color 200ms ease-in-out;
+}
+
+#recent-articles a:hover {
+    background-color: var(--gray);
 }

@@ -28,6 +28,7 @@
             <p>More information on the <a href="https://ucpedia.com/">main page!</a></p>
         </div>
 
+        <span id="last-edited" style="display: none;">15 Jul 2026 at 22:20</span>
         <div id="main">
             <div id="contents">
                 <h4 class="underline">Contents</h4>
@@ -347,6 +348,12 @@ That register is write-protected by default. To modify it, set the <code>DBP</co
 <li><code>HSITRIM</code> <em>(7-bit field)</em></li>
 </ul>
 <p><em>I'm not sure how calibrating itself works - it's not a feature I will realistically need for now, so I will update this section once I learn more about it.</em></p>
+<h3>Clock Lines</h3>
+<p>HSI provides 2 notable lines:</p>
+<ul>
+<li><code>hsi_ck</code> for the system clock</li>
+<li><code>hsi_ker_ck</code> for the kernel clock</li>
+</ul>
 <h2>Low-Power Internal (CSI)</h2>
 <p>Despite its seemingly random acronym derivation <em>(seriously, where did they actually get CSI from?)</em>, it's mostly similar to the HSI:</p>
 <ul>
@@ -374,6 +381,11 @@ That register is write-protected by default. To modify it, set the <code>DBP</co
 <h3>CSI Calibration</h3>
 <p>The CSI is factory calibrated by STMicroelectronics, but you can recalibrate it based off what kind of environment your MCU will be in.</p>
 <p><em>Just as the HSI Calibration section, this isn't something I see myself needing in any capacity for now, so I will update this section once I learn more about it.</em></p>
+<p>CSI, just like HSI, provides 2 notable lines:</p>
+<ul>
+<li><code>csi_ck</code> for the system clock</li>
+<li><code>csi_ker_ck</code> for the kernel clock</li>
+</ul>
 <h2>HSI48 Oscillator</h2>
 <p>This is a clock which runs <em>(as accurately as it possibly can)</em> at 48 MHz. It can be used as a kernel clock for some peripherals.</p>
 <p>It has one main goal: be an accurate clock for full-speed USB peripherals by means of a special Clock Recovery System <em>(CRS)</em>.</p>
@@ -584,7 +596,6 @@ That register is write-protected by default. To modify it, set the <code>DBP</co
 <li>You <strong>can not</strong> change DIVx when DIVxEN is set to 1 - just remember it was actually PLLxyEN on the <code>RCC_PLLCFGR</code> register, I'm just using the terms from Figure 48</li>
 <li>You <strong>can not</strong> clear PLL1ON or PLL1PEN if PLL1 is currently used to deliver the system clock - Table 62 from RM0477 <em>(shown below)</em> lists other clock protections</li>
 </ul>
-<p><img src="./assets/table_62-clock_protection_summary.png" alt="STM32H7RS clock protection" /></p>
 <h3>PLL Misc.</h3>
 <p>Some extra notes before we move on:</p>
 <ul>
@@ -714,6 +725,107 @@ Fc = Fmax * (1 - (Md / 100))
 <p>As you can see, in order to get to the CPU, <code>sys_ck</code> has to pass through CPRE, which divides it by 1-512. This division also directly affects the peripheral buses <em>(as they're downstream from this divider)</em>. In the same way, BMPRE is used to divide the AXI/AHB buses, but it also affects the APB bus.</p>
 <p>Bear these in mind when designing your clock tree, or use STM32CubeMX as it has a fantastic visualisation tool for the clocks <em>(I know, both of us probably enjoy register-level programming without any abstractions, but you have to admit when a tool makes the workflow much more effective!)</em></p>
 <p><img src="./assets/figure_51-core_and_bus_clock_generation.png" alt="Figure 51 - Core and bus clock generation" /></p>
+<p><em>Note that the product datasheet specifies maximum frequencies for the CPU and buses, refer to it for your specific board and make sure you do not exceed them!</em></p>
+<h2>Clock Protection</h2>
+<p>Besides being unable to disable <code>sys_ck</code>, HSE failure detection, and send invalid write operations to FMC/XSPI blocks, here's a summary from RM0477 on additional clock protections:</p>
+<p><img src="./assets/table_62-clock_protection_summary.png" alt="STM32H7RS clock protection" /></p>
+<h2>Clocks In STOP/STANDBY</h2>
+<p>Recap of the PWR block article: in STOP, all system clocks are disabled, including their sources:</p>
+<ul>
+<li>CSI/HSI <em>(depending on CSIKERON/HSIKERON)</em></li>
+<li>HSE</li>
+<li>all PLLs</li>
+<li>HSI48</li>
+</ul>
+<p>The only RCC register contents that get altered upon entry on STOP mode are the xxxON bits <em>(HSION, PLLxON, HSEON, etc.)</em>, though HSION/CSION are additionally affected by the STOPWUCK/STOPKERWUCK bits.</p>
+<p>The sequence for entering stop mode is as follows. First, the RCC disables all of the clocks it needs to disable. Second, the RCC signals to the PWR block that the clocks have been disabled and it can go into stop or standby mode. This sends an rcc_pwrds signal to the PWR block.</p>
+<p>In terms of waking up, there are two main signals:</p>
+<ul>
+<li><strong>exti_wkup</strong>, which signals to the PWR block that an event has requested to wake up from STOP mode</li>
+<li><strong>per_wkup</strong>, which signals to the RCC block to re-enable the clocks</li>
+</ul>
+<p>Upon waking up from a stop event, the firmware has an ability to select which system clock and kernel clock the RCC will re-enable. You select them through the STOPWUCK and STOPKERWUCK bits, with the former selecting the system clock and the latter selecting the kernel clock, as implied by <em>'KER'</em> in its name. These bits are located in the <code>RCC_CFGR</code> register.</p>
+<h3>CSI/HSI In STOP</h3>
+<p>Both HSI and CSI are by default disabled in stock mode. However, they can both be enabled to an extent.</p>
+<p>Here's how:</p>
+<ul>
+<li><code>PERxSRC</code>* : used to select between HSI/CSI for a dedicated peripheral's kernel clock. When the peripheral requests it during STOP mode, the clock is started, and then disabled again when no longer needed</li>
+<li><code>HSIKERON</code>/<code>CSIKERON</code>: used to keep the HSI/CSI fully running during STOP mode - however, they are gated off and not allowed to be used until the system wakes up from STOP, or a peripheral requests them as its kernel clock</li>
+</ul>
+<p>The obvious advantage to the first approach is that both CSI and HSI are fully powered down and not consuming power, at the cost of a longer wake-up time when they are needed. The second approach is the opposite: the clocks are immediately available when needed, at the cost of idle power consumption <em>(albeit fairly low as the clocks are gated)</em>.</p>
+<p>In either case, when the kernel clock is activated, only the path providing <code>hsi_ker_ck</code>/<code>csi_ker_ck</code> <em>(mentioned these in the HSI/CSI sections)</em> is actually activated, not the others like <code>hsi_ck</code>/<code>csi_ck</code> <em>(might be obvious otherwise the entire core would get activated, but I thought it's worth mentioning)</em>.</p>
+<p>Furthermore, when exiting STOP mode, the clock frequency isn't set to what it was prior to the reset <em>(due to registers being cleared)</em>, so the software must maintain this if it needs to.</p>
+<p><em>Note that this doesn't apply to STANDBY mode - when you exit that, HSI is always selected as the power source because a STANDBY exit is effectively a Power-On Reset (POR). Additionally, all registers are reset to their default values upon exiting STANDBY except <code>RCC_RSR</code> and <code>RCC_BDCR</code>.</em></p>
+<p><em>* <code>PERxSRC</code> actually means replace <code>PER</code> with your peripheral (e.g. USB) and x with the peripheral number or whatever else it has (e.g. PHYC for USB, so you end up with USBPHYCEN). It's located in the <code>RCC_xxxxENR</code> register, where <code>xxxx</code> = the bus (e.g. AHB1).</em></p>
+<h2>Peripheral Clock Distribution</h2>
+<p><em>Worth a mention even if I won't say much for this section.</em></p>
+<p>RM0477 has a few pages dedicated to a long table showing what clock types, sources, frequencies, etc. different on-board peripherals have/require.</p>
+<p>The reason this is needed is because <em>(some)</em> peripherals on the STM32H7RS work with 2 asynchronously-operating clocks:</p>
+<ol>
+<li>a bus clock, which is synchronous with the registers/buses</li>
+<li>a kernel clock, which is <em>(generally*)</em> synchronous with the peripheral</li>
+</ol>
+<p>This allows more flexibility with selecting different clocks and frequencies for different parts of the peripheral, as well as not having to disable and reprogram the peripheral when you only change the bus frequency <em>(the more 'important' kernel clock remains unaffected).</em></p>
+<p>Head to Table 65 on the RM0477 to see the complete table for whichever peripheral you're programming, which spans 8 pages of the PDF!</p>
+<p><em>* Note that RM0477 uses the word &quot;generally&quot; here - I am not entirely sure why and I couldn't find information on it. My best assumption is that it is not always synchronous if some peripherals use multiple kernel clocks, or if the kernel clock is a PLL and it's running in fractional/spread-spectrum mode. If you know about this, please let me know!</em></p>
+<h3>Clock Distribution Per-Peripheral</h3>
+<p>Right after Table 65, there is a long section which provides more details on clock distributions for each individual peripheral <em>(including diagrams)</em>.</p>
+<p>Again, go there if you need to program a specific peripheral and want specific advice for it. Writing down all of the information here would be pointless as it's 22 pages long and will just be a direct copy-paste.</p>
+<p><strong>From here-on-out, the rest of the sections are more rapid-fire in order to get any final details out. Some info may be repeated.</strong></p>
+<h2>RCC Clock Concept</h2>
+<p>The RCC handles the generation and distribution of CPU, bus, and peripheral clocks <em>(definition of these near the top of the article)</em>.</p>
+<p>Peripherals get their bus and kernel clock from the RCC, which can be controlled by software. To use a peripheral, it needs to be enabled with <code>PERxEN</code>/<code>PERxLPEN</code> - the former is for enabling it in RUN mode, while the latter is for SLEEP mode. When you enable one of these bits <em>(or both)</em>, that's called <em>’allocating'</em> the peripheral, see next section.</p>
+<p>When a peripheral is allocated:</p>
+<ul>
+<li>RCC can control the gating of its clocks</li>
+<li>PWR can control its voltage supply</li>
+</ul>
+<h3>Memory Handling</h3>
+<p>The CPU can access all memory areas of the board:</p>
+<ul>
+<li>AXISRAMx</li>
+<li>ITCM</li>
+<li>DTCMx</li>
+<li>FLASH</li>
+<li>AHBSRAM1</li>
+<li>AHBSRAM2</li>
+<li>BKPRAM</li>
+</ul>
+<p>The last 3 have dedicated enable bits that software must enable before accessing them.</p>
+<p>FLASH/SRAM can be stopped in SLEEP mode via the <code>SRAMyLPEN</code> bits.</p>
+<h2>Peripheral Allocation</h2>
+<p>The CPU can:</p>
+<ul>
+<li>allocate a peripheral and so control its peripheral/kernel clocks</li>
+<li>allocate a peripheral by setting its <code>PERxEN</code> bit</li>
+<li>control peripheral clock gating in SLEEP mode via its <code>PERxLPEN</code> bit</li>
+</ul>
+<p>Besides enabling the clocks, the <code>PERxEN</code> bit links the CPU and the peripheral and so they can be controlled by hardware according to the power mode.</p>
+<h3>Switching A Peripheral's Clock</h3>
+<p><code>PERxSEL</code> are the bits used to select a peripheral's source clock.</p>
+<p>When switching the clock source for a peripheral, the switch disables the old clock output before enabling the new one.</p>
+<p>This means during the transition time, there is a ‘gap' where a clock is missing for the peripheral, 2-3 clock cycles of the new clock as a worst-case scenario. The old clock source also continues running for a maximum of 1.5 clock cycles before it is disabled. These delays are there so the peripheral doesn't get enabled halfway through a clock period, which could cause a short pulse of the high clock period and result in issues.</p>
+<p>Besides this, both the old and new clock <strong>must</strong> be running during the transition time of the peripheral clock, else the transition will fail and the firmware will need to manually recover by providing a different clock to <code>in1_ck</code> <em>(see Figure 74 from RM0477 below)</em>, or changing the source using <code>PERxSEL</code> again.</p>
+<p><strong>Note that this applies to both kernel and bus clocks.</strong></p>
+<p><img src="./assets/figure_74-kernel_clock_switching.png" alt="figure 74 - kernel clock switching" /></p>
+<h2>Peripheral Clock Gating</h2>
+<p>The kernel and bus clocks <em>(<code>rcc_perx_ker_ck</code>/<code>rcc_perx_bus_ck</code>)</em> can be gated in the following ways:</p>
+<ul>
+<li><code>PERxEN</code>/<code>PERxLPEN</code> bits</li>
+<li>CPU state (SLEEP/STOP/STANDBY power modes)</li>
+<li>kernel clock request <em>(<code>perx_ker_ckreq</code>)</em> by the peripheral</li>
+</ul>
+<p><em>Table 68</em> of the RM0477 shows the full table with all details, but in general the kernel clock can be assumed to be provided in the peripheral if:</p>
+<ul>
+<li>CPU is in RUN mode and the peripheral is enabled*</li>
+<li>CPU is in SLEEP mode and the peripheral is enabled with <code>PERxLPEN</code>*</li>
+<li>CPU is in STOP mode, the peripheral is enabled with <code>PERxLPEN</code>, and it generates a kernel clock request when its kernel clock is <em>hsi_ker_ck</em> or <em>csi_ker_ck</em></li>
+<li>CPU is in STOP mode, the peripheral is enabled with <code>PERxLPEN</code>, and its kernel clock is <em>lsi_ck</em> or <em>lse_ck</em></li>
+</ul>
+<p><em>* In these first two cases, the bus clock is also provided. It is not provided in the latter two cases.</em></p>
+<p>The only exception is the RNG peripheral, which is summarised by Figure 69 from the RM0477 below:</p>
+<p>IMG HERE</p>
+<h2>CPU/Bus Clock Gating</h2>
 <h2>Sources</h2>
 <p><a href="https://www.st.com/content/ccc/resource/training/technical/product_training/group0/81/96/f3/1a/55/d9/40/52/STM32H7-System-Reset_and_clock_control_RCC/files/STM32H7-System-Reset_and_clock_control_RCC.pdf/_jcr_content/translations/en.STM32H7-System-Reset_and_clock_control_RCC.pdf">STMicroelectronics - STM32H7 RCC Presentation</a>
 <a href="https://www.st.com/resource/en/reference_manual/rm0477-stm32h7rx7sx-armbased-32bit-mcus-stmicroelectronics.pdf">STMicroelectronics - STM32H7S3L8 Reference Manual</a>

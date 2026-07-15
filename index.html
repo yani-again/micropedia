@@ -19,29 +19,23 @@
         </header>
 
         <main>
-            <h1>Welcome To MicroPedia!</h1>
-            <p>This is owned and maintained by <a href="https://github.com/yani-again" target="_blank">@yani-again</a>. I'm a 1st year university student in <em>Computer Science</em> and I became heavily interested in <em>embedded systems</em> during my most recent semester.</p>
-            <p>However, as I tried to learn (first on a Raspberry Pi Pico and now an STM32), I found the available resources had 4 main inconsistencies with how I like to learn:</p>
-            <ul>
-                <li>Many resources were TOO basic; I'm someone who likes to understand things down to the transistors, not just to code hobbyist Arduino projects (nothing wrong with that, just not my style).</li>
-                <li>Many were also HAL-only. Seldom would I find something that explained bare-metal programming.</li>
-                <li>Resources were never a one-stop solution. You'd always have to jump between 5 different tabs to get the big picture.</li>
-                <li>My biggest issue: it all assumed decent prior knowledge. What do you mean you won't explain what UART oversampling is and Google turns up no coherent results either?</li>
-            </ul>
-            <p><strong>So, I made my own!</strong></p>
-            <p>Every article in MicroPedia tries to answer one core question: <em>“what did I need to learn before I felt confident that I understood this topic?”</em></p>
-            <p>This site also exclusively focuses on the STM32 family of chips for now because that's what I'm learning right now. The concepts will likely largely apply to other families that use Cortex-M processors (though not entirely), and they will likely largely <strong>NOT</strong> apply to non-Cortex-M chip MCUs.</p>
-            <p>I also want to clarify this isn't a complete reference manual or something designed to replace credible sources, MicroPedia focuses on the concepts, assumptions, mistakes, and insights that helped me learn bare-metal.</p>
+            <h1>Welcome To Micropedia!</h1>
+            <p>If you are new to <em>embedded systems</em> and want to learn a little faster than I did, Micropedia is built with you in mind!</p>
+            <p>The articles here do assume you have a basic understanding of computer architecture <em>(e.g. what a clock is, the different logic gates, maybe how Assembly language works, etc.)</em> which you'd get from any introductory book or university module, but if you don't that's okay! You might have to just read up when you come across an unfamiliar concept.</p>
+            <p>The reason for this assumption is because Micropedia is built for those who want to learn register-level programming instead of abstractions like the STM32 HAL. As such, the articles have to be hardware-specific and so are focused on the <strong>STM32 microcontroller family</strong>, in particular the STM32H7RS series.</p>
+            <br>
+            <p>This is owned and maintained by <a href="https://github.com/yani-again" target="_blank">@yani-again</a>. I'm a 2nd year university student in <em>Computer Science</em> and I became heavily interested in <em>embedded systems</em> during my most recent semester.</p>
+            <p>However, as I tried to learn (first on a Raspberry Pi Pico and now an STM32), I found existing resources rarely taught register-level programming to people with little microcontroller knowledge - <em>especially the datasheets and reference manuals, which are usually targeted at more seasoned developers.</em></p>
+            <p><strong>So, I made my own resource!</strong></p>
+            <p>Every article in Micropedia tries to answer one core question: <em>“what did I need to learn before I felt confident that I understood this topic?”</em></p>
+            <p>I also want to clarify this isn't a complete reference manual or something designed to replace credible sources, Micropedia focuses on the concepts, assumptions, mistakes, and insights that helped me learn bare-metal.</p>
             <p>If you're new to embedded systems and want to understand what's happening beneath the abstractions, I hope these notes help you learn a little faster than I did.</p>
             <p>Also, one of the most enjoyable parts of learning about microcontrollers for me is how it maps to <em>regular</em> computer knowledge - for example, the multi-GHz speeds your modern laptop can achieve are achieved in the <strong>exact same way</strong> that the STM32 achieves a 100 MHz speed through a base clock and a PLL. If you like these kinds of "Eureka!" moments, then you'll love Micropedia!</p>
             <p class="warn"><strong>NOTE!</strong> I'm still a university student who's very much learning, so mistakes will definitely happen. If you spot one, have a suggestion, or just extra context to add, please let me know at <a href="mailto:yanislavyankov23@gmail.com" target="_blank">yanislavyankov23@gmail.com</a>.</p>
 
             <h2>Recent Articles</h2>
-            <p>
-                <a href="bare-metal_startup.html">STM32 Bare-Metal Startup And Blinky</a>
-                <a href="linker_script.html">STM32 Linker Script (From Scratch)</a>
-                <a href="makefile.html">Makefile (`make`) For Linux</a>
-            </p>
+            <div id="recent-articles">
+            </div>
 
             <h2>Some Of My Favourite Sources</h2>
             <p><em>In case you want to research yourself.</em></p>

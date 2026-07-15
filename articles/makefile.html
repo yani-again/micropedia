@@ -28,6 +28,7 @@
             <p>More information on the <a href="https://ucpedia.com/">main page!</a></p>
         </div>
 
+        <span id="last-edited" style="display: none;">19 Jun 2026 at 14:37</span>
         <div id="main">
             <div id="contents">
                 <h4 class="underline">Contents</h4>
@@ -163,7 +164,7 @@ my_program : $(OBJECTS)
 <p>The <code>$&lt;</code> and <code>$@</code> automatic variables are explained in the above section.</p>
 <p>I think what really makes this click for me is understanding that <code>%.o : %.c</code> can't exist on its own - it needs to be explicitly called with a stem like <code>main</code> so it can turn it into something useful, <code>main.o : main.c</code> in this case. It doesn't just automatically search the working directory for all possible target names that would match; it only searches the working directory for prerequisites.</p>
 <h2>Sources</h2>
-<p><a href="https://makefiletutorial.com/">Chase Lambert Makefile Tutorial</a> - Main Source
+<p><a href="https://makefiletutorial.com/">Chase Lambert Makefile Tutorial</a>
 <a href="https://www.gnu.org/software/make/manual/html_node/Pattern-Rules.html">GNU Pattern Rules</a></p>
             </main>
         </div>

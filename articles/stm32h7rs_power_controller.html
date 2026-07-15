@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta http-equiv="X-UA-Compatible" content="ie=edge">
+        <title>STM32H7RS Power Controller (PWR) Block - H7RS Series - MicroPedia</title>
+        <link rel="stylesheet" href="../reset.css">
+        <link rel="stylesheet" href="../style.css">
+        <link rel="icon" href="../public/favicon.ico" type="image/x-icon">
+    </head>
+    <body>
+        <header>
+            <img src="../assets/ucpedia logo.png" alt="logo">
+            <form action="search.html">
+                <input name="search" id="search" type="text" placeholder="Search articles"><!--
+                --><button id="search-button">search</button>
+            </form>
+        </header>
+
+        <div id="disclaimer" class="display-none">
+            <span class="exit" onClick="hide_disclaimer()">x</span>
+            <h3>SOME NOTES!</h3>
+            <ol>
+                <li>This website exclusively focuses on STM32 microcontrollers. If you are using something else, take this information with a grain of salt. If you are using something with a Cortex-M processor, there is still valuable information you can extract, though not every article will be applicable to a non-STM32 microcontroller.</li>
+                <li>I'm a university student and this site is my passive personal project. I collect my notes as I learn bare-metal embedded programming, then I tidy and upload them here. Being in the learning phase, there are likely a bunch of mistakes around the site. If you spot any, <a href="https://github.com/yani-again" target="_blank">please let me know!</a></li>
+            </ol>
+            <p>More information on the <a href="https://ucpedia.com/">main page!</a></p>
+        </div>
+
+        <span id="last-edited" style="display: none;">04 Jul 2026 at 19:33</span>
+        <div id="main">
+            <div id="contents">
+                <h4 class="underline">Contents</h4>
+                <div></div>
+            </div>
+
+            <main>
+<h1>STM32H7RS Power Controller (PWR) Block</h1>
+<p>So... if you're here from the RCC article, I know I said that this is a quick one, but it's actually a more in-depth topic than I anticipated. Oops...</p>
+<h2>Rails</h2>
+<p>Quick note before we start - you will see me throw the term <em>'rails'</em> around - that's engineer talk for &quot;power line&quot;.</p>
+<p>A rail is a stable voltage supply that's capable of powering parts of the board on, and multiple rails can coexist at the same time, all powering different stuff.</p>
+<h2>Regulators &amp; <code>VCORE</code></h2>
+<p>Regulators are what control how much voltage the electronics actually receive. The STM32H7RS has 2:</p>
+<ul>
+<li>LDO</li>
+<li>SMPS</li>
+</ul>
+<p>LDOs are <em>linear</em> regulators, meaning they just take the input, get the difference from the target output, and use a variable resistor to regulate how much voltage passes through.</p>
+<p>They can take voltage that's <em>similar</em> to the target voltage and output the target voltage, which will power our STM32. For example, running the STM32 at 3.3V from a battery which outputs 3.4V as it begins to run out of charge will still be manageable - the LDO can cover that tiny 0.1V <em>drop</em>.</p>
+<p>Note I said <em>drop</em>, the LDO can only decrease the input voltage to the target voltage, not the other way round.</p>
+<p>SMPS are the other one.</p>
+<p>They work by rapidly switching a transistor on/off at high frequencies as needed.</p>
+<h3>Which To Use?</h3>
+<p>In short:</p>
+<ul>
+<li>LDO is simple and creates low electrical noise, but is more power-hungry and heats up more</li>
+<li>SMPS is power efficient and doesn't heat up as much, but is more complex hardware-wise and creates more electrical noise</li>
+<li>SMPS -&gt; LDO <em>(so, using both)</em> is a compromise that uses the SMPS to get a rough voltage close to the target and LDO to hit the target, which creates less heat and noise</li>
+</ul>
+<p>In any case, any combination of these will act as input to the <code>VCAP</code> rail - that's the rail which gets created through the <code>VDD</code> rail, which is what supplies the input to LDO/SMPS.</p>
+<p>Alternatively, you can use <code>VCAP</code> as input - this involves disabling/bypassing both LDO and SMPS and powering the board internally yourself.</p>
+<h4>VCAP</h4>
+<p>A quick note on the <code>VCAP</code> idea - as I said, it's just a rail which can be used to power things. In the case of STM32, it actually powers the CPU, system logic, EXTI, peripherals, RAM, and other things I probably am not aware of.</p>
+<p>So whether you use it as output <em>(activating LDO/SMPS)</em> or input <em>(using your own voltage supply)</em>, it feeds into <code>VCORE</code> and powers on the most critical parts of your board.</p>
+<h3>How To Use Them?</h3>
+<p>On the STM32H7S3L8, the datasheet outlines the register <code>PWR_CSR2</code> with the following <em>(relevant)</em> bits:</p>
+<ul>
+<li>Bit 0: power management unit bypass - if you set a <code>1</code>, LDO and SMPS are <strong>disabled</strong> and you <strong>must</strong> power the board with an external power supply <em>(dangerous if you don't know what you're doing, a bit like me)</em></li>
+<li>Bit 1: LDO enable, on by default</li>
+<li>Bit 2: SMPS enable, on by default</li>
+</ul>
+<p>The hardware is protected from writing invalid combinations - it just ignores the write. You can see the invalid combinations on the datasheet <em>(table 44 for the H7S3L8)</em>.</p>
+<p><strong>NOTE!</strong> You can only write to this register once per power cycle <em>(you need a full power-off to write to it again)</em>, and writes should happen as soon as possible after power on.</p>
+<h2>The Power-On Sequence</h2>
+<p>When the board receives power after a power-on reset:</p>
+<ol>
+<li><code>VDD</code> is monitored until it's stable</li>
+<li>Once it's stable, LDO and SMPS are enabled</li>
+<li>Those two create <code>VCORE</code>, but the system must remain in reset until <code>VCORE</code> is stable</li>
+<li>Once it's stable, the system exits reset and the HSI clock is enabled as a result</li>
+<li>Boot sequence is as standard from then on - read <code>0x00000000</code>, set MSP, read Reset Handler address from <code>0x00000004</code>, etc.</li>
+</ol>
+<h2>Other Rails</h2>
+<h3><code>VDD</code> Rail</h3>
+<p>This is the rail which powers the board's I/O and analog blocks - the analog blocks that are required for the rest of the board to work <em>(oscillators, power modes, and reset detection circuitry - <code>VCORE</code> can't power those)</em></p>
+<h3><code>VBAT</code> Rail</h3>
+<p>Typically, this means <strong>V</strong>oltage <strong>BAT</strong>tery, but it can also be a supercapacitor.</p>
+<p>This is used when <code>VDD</code> drops below a certain threshold, usually meaning it has been turned off. The switch from <code>VDD</code> to <code>VBAT</code> <em>(and back)</em> is handled by hardware automatically.</p>
+<p>Just note that it doesn't take over <code>VCORE</code> - things like CPU, peripherals, EXTI, etc. go offline untill <code>VDD</code> is reinstated. The purpose of <code>VBAT</code> is just to keep a <strong>backup domain</strong> <em>(see that section)</em> alive in between power cycles, such as Real-Time Clock <em>(RTC)</em>, backup RTC registers, and backup SRAM.</p>
+<p><code>VBAT</code> has 2 'subparts', which may or may not be specific to the H7RS family, so double check your datasheet:</p>
+<ul>
+<li><strong>VSW:</strong> the raw voltage coming straight from <code>VDD</code> or <code>VBAT</code>, feeds into clocks, backup registers, wakeup logic, and the reset</li>
+<li><strong>VBKP:</strong> the voltage that gets passed through the backup regulator, feeds into backup SRAM</li>
+</ul>
+<h3><code>VDDXSPI1</code> And <code>VDDXSPI2</code></h3>
+<p>These two rails are for powering dedicated XSPI-related peripherals, which is typically external flash memory.</p>
+<h3><code>VDDA</code> and <code>VSSA</code></h3>
+<p><code>VDDA</code> is for analog peripherals, which are sensitive to the noise on the standard <code>VDD</code> line.</p>
+<p>It's is the same voltage as <code>VDD</code> - in fact it's usually derived from <code>VDD</code> - but <code>VDDA</code> undergoes filtering to make it less noisy.</p>
+<p><code>VSSA</code> is the ground-equivalent for whatever <code>VDDA</code> is plugged into.</p>
+<h3><code>VDD33USB</code> And <code>VDD50USB</code></h3>
+<p><code>VDD33USB</code> is another rail, the <code>33</code> meaning it's 3.3V. It can either be powered on by the onboard regulator from <code>VDD50USB</code> <em>(5.0V supply, usually USB cable from a computer)</em>, or externally by directly getting connected.</p>
+<p>As this is USB-related, there's one other quirk - <em>high-speed (HS) USB.</em> There's a pin, <code>DVDD</code>, which the spec outlines must be connected to ground if HS isn't used, otherwise it needs to get connected to VDD. This is to avoid floating lines on the <code>DVDD</code> pin if HS isn't used - which can cause unpredictable behaviour.</p>
+<h2>Backup Domain</h2>
+<p>Normally, this part gets powered by <code>VDD</code>, but if its voltage dips too low <em>(e.g. it's powered off)</em>, <code>VBAT</code> takes over automatically through a hardware power switcher.</p>
+<p>The backup domain contains these things:</p>
+<ul>
+<li>32kHz LSE oscillator</li>
+<li>RTC clocked by said LSE</li>
+<li>RTC tamper pins</li>
+<li>backup registers - including <code>RCC_BDCR</code> register, it's in the RTC article</li>
+<li>backup regulator</li>
+<li>backup SRAM when backup regulator is on</li>
+</ul>
+<h2>Power Supply Monitoring</h2>
+<p>These prevent the board from functioning outside of normal voltage, which prevents unpredictable behaviour.</p>
+<p>There are multiple monitoring systems on the STM32H7RS.</p>
+<h3>Reset Events</h3>
+<p>The following trigger a reset when they act:</p>
+<ul>
+<li><code>POR</code>: Power-On Reset, keeps the system in reset* upon power-on (hence the name) until <code>VDD</code> is above a certain threshold</li>
+<li><code>PDR</code>: Power-Down Reset, if <code>VDD</code> voltage drops below a certain threshold while the board is already running, it forces it into a reset state</li>
+<li><code>BOR</code>: Brownout Reset, exactly like <code>PDR</code>, but the threshold is configurable by the programmer</li>
+</ul>
+<p><em>* A reset state is when the CPU is prevented from executing code.</em></p>
+<h3>Interrupt Events</h3>
+<p>The following fire an interrupt when they act:</p>
+<ul>
+<li><code>PVD</code>: Programmable Voltage Detector, a programmable threshold that encompasses <code>VDD</code> and triggers an interrupt when <code>VDD</code> dips below. It can also be used to monitor the <code>PVD_IN</code> pin instead, which is where you’d provide an external voltage for monitoring</li>
+<li><code>AVD</code>: Analog Voltage Detector, our first detector which works by monitoring something other than <code>VDD</code>. This works by monitoring the analog <code>VDDA</code> pin outlined above and triggering an interrupt when it dips below a software a programmable threshold</li>
+</ul>
+<h3>Tamper Events</h3>
+<p>The word 'tamper' is a bit unclear - it's not actually someone messing with the hardware/software, it'll become clear in the <strong>Power Modes</strong> section lower down the page:</p>
+<ul>
+<li>Battery Voltage Thresholds: monitors backup domain by using <code>VBAT&lt;low&gt;</code> and <code>VBAT&lt;high&gt;</code> as thresholds, triggering an interrupt when <code>V&lt;sw&gt;</code> <em>(backup domain voltage)</em> steps outside</li>
+<li>Temperature Threshold: monitors the temperature of CPU. It's not very accurate as it's intended to use as a back-up if an external one fails</li>
+<li><code>VCORE</code> maximum voltage level detector*: when too much voltage is supplied to <code>VCORE</code>, the circuit can detect that and automatically lower it to a baseline 1.0V and set the <code>ACTVOSRDY</code> bit. This means you'll need to correct your firmware to prevent the issue, and power cycle your STM</li>
+</ul>
+<p><em>* This detector can only be enabled when the system is powered by the direct (on-board) SMPS regulator only.</em></p>
+<h3>Other Monitors</h3>
+<p>There are also 3 extra monitors briefly mentioned in the <a href="https://www.st.com/content/ccc/resource/training/technical/product_training/group1/e3/f2/44/65/3f/04/40/4c/stm32h7rs-system-power-control-pwr/files/stm32h7rs-system-power-control-pwr.pdf/jcr:content/translations/en.stm32h7rs-system-power-control-pwr.pdf">STM32H7RS PWR PowerPoint</a>, so I'll just bring them up here for completion, as they can all generate status bits to indicate they're ready to use, not that there's a voltage issue:</p>
+<ul>
+<li><code>VBKP</code> - backup regulator rail</li>
+<li><code>VFSMPS</code> - feedback provided to SMPS</li>
+<li><code>VDD33USB</code> - generated by USB regulator</li>
+</ul>
+<p>All 3 have relevant bits in the <code>PWR_CSR1</code> and <code>PWR_CSR2</code> registers to indicate when they are ready.</p>
+<h2>Power Modes</h2>
+<p>STM32s have different power modes that the voltage regulator implements:</p>
+<ul>
+<li><strong>RUN</strong></li>
+<li><strong>SLEEP</strong></li>
+<li><strong>STOP</strong></li>
+<li><strong>STANDBY</strong></li>
+</ul>
+<p>The main difference between them is mainly how much voltage <code>VCORE</code> is receiving <em>(if any)</em>, and thus whether the oscillators, clocks, and voltage regulator are on or not, and the core idea I've gathered is that the different modes go in this order, ranked by <em>capability</em>: <strong>RUN, SLEEP, STOP, STANDBY</strong>.</p>
+<p><strong>RUN</strong> mode gives full voltage to <code>VCORE</code> and operations are as normal.</p>
+<p><strong>SLEEP</strong> is a slightly odd one - it's basically <strong>RUN</strong>, but the CPU clock is off, so code execution is disabled, and peripheral clocks can be optionally disabled. Usually used with peripheral clocks on to keep the peripherals active but suspend CPU while it waits for something like an external interrupt. <em>Note that this does include the on-board peripherals like NVIC and SysTick, which generate interrupts.</em></p>
+<p>Also, in SLEEP mode, I/O pins keep the same state as in RUN mode.</p>
+<p><strong>STOP</strong> provides enough voltage to <code>VCORE</code> <em>(called a retention value)</em> to keep the registers and memory preserved, though peripheral clocks can be kept on. This is very power efficient, and the MCU can be woken up by external interrupts and the Real-Time Clock.</p>
+<p>This mode also lets peripherals send a kernel clock activation request - e.g. over UART, where the peripheral sends a specific UART message, and if it's correct, the kernel clock turns on and the system returns to RUN mode, otherwise the clock turns off and we stay in STOP mode.</p>
+<p>You can also program the system to keep flash memory in a low-power mode via <code>PWR_CR1</code>, which will make getting back on track faster after a wake-up.</p>
+<p>A cool little quirk here is that if flash memory is being programmed as you enter STOP mode, STOP mode will actually get delayed until the programming is finished so you don't have a half-complete image.</p>
+<p>There's a complete list of what can be kept on in SLEEP mode on the <a href="https://www.st.com/content/ccc/resource/training/technical/product_training/group1/e3/f2/44/65/3f/04/40/4c/stm32h7rs-system-power-control-pwr/files/stm32h7rs-system-power-control-pwr.pdf/jcr:content/translations/en.stm32h7rs-system-power-control-pwr.pdf">STM32H7RS PWR PowerPoint</a>, page 24. It's mostly oscillator/clock stuff.</p>
+<p><strong>STANDBY</strong> powers <code>VCORE</code> down. Realistically, only the backup SRAM and RTC remain powered and retain data via <code>VBAT</code>. At first, this sounded like a power-off with the extra step of <code>VBAT</code>, but you can actually wake the board up again via the <code>WKUP</code> pin, RTC alarms, tamper event <em>(remember how I called the temperature and battery voltage threshold detectors 'tamper' events?)</em>, <code>NRST</code> pin <em>(though that triggers a hardware reset, not a wake-up)</em>, or a watchdog reset. Once a wake-up happens, the system is back to running from the HSI oscillator</p>
+<p>Those aren't all possible ways of waking up from STANDBY, but they're the main ones I found in my sources.</p>
+<p>Besides that, there is also some misc. info on STANDBY mode:</p>
+<ul>
+<li>it's the lowest-power mode in which the brownout reset is available</li>
+<li>LDO/SMPS are off <em>(since <code>VCORE</code> is powered off)</em></li>
+<li>most oscillators are off, only LSE/LSI are left for a few purposes like keeping RTC on if you want to</li>
+<li>all I/O pins are high-impedance* <em>(think of it as disconnected)</em> unless pull-up is enabled in <code>PWR_APCR</code>, exceptions being <code>WKUPx</code>, <code>RTC_AF1</code>, and I3C's <code>SDA</code>/<code>SCL</code> pins</li>
+</ul>
+<p><em>* The reason it's called high-impedance is actually interesting. You can think of impedance as meaning resistance, which changes the term to &quot;high-resistance&quot;. Take a look at <a href="https://embetronicx.com/tutorials/tech_devices/understanding-the-microcontroller-gpio-gpio-working-explained/#High-impedance:~:text=If%20you%20see%20the%20below%20image%2C%20the%20GPIO%20pin%20is%20not%20connected%20to%20either%20Vcc%20or%20GND">this image</a> - when a pin is disconnected, both transistors between the pin and Vcc/Gnd do not allow current to flow. STM32's pins use what's called CMOS transistors, which increase the resistance to near infinity when the transistor gate is closed. So, when a pin is disconnected, both transistors connected to it are in a near-infinite resistance state, hence high-impedance. Fun but kind-of-useless fact for most cases.</em></p>
+<h2>Dynamic Voltage Scaling</h2>
+<p>This topic felt like a sub-section of <strong>Power Modes</strong> at first, but the core idea warrants its own section. As the name implies, this is voltage scaling that dynamically changes on-demand, and it's automatic - perfect for power consumption optimisation.</p>
+<p>Also, it seems like a feature exclusive to the H7RS chips, which is what this article is for!</p>
+<p>It works by exploiting the fact that as clock frequencies and operational voltage go up, so does the power consumption. And that's exactly what happens - the main regulator which supplies <code>VCORE</code> can be adjusted according to the board's maximum operational frequency <em>(irregardless of whether LDO or SMPS is used - both can provide 2 different voltages)</em>, and there are some extra things I'll mention if <code>VCAP</code> is bypassed and <code>VCORE</code> is powered externally.</p>
+<h3>VOS And SVOS</h3>
+<p>These stand for <strong>VO</strong>ltage <strong>S</strong>caling and <strong>S</strong>TOP <strong>VO</strong>ltage <strong>S</strong>caling respectively, and yes that's STOP like the <strong>STOP</strong> power mode. They each have 2 modes: low and high.</p>
+<p>Thankfully, the management principles for the STM32H7 are simple <em>(thank you STMicroelectronics)</em>:</p>
+<ul>
+<li>when workload increases, first <em>increase</em> VOS and then frequency</li>
+<li>when workload decreases, first <em>decrease</em> frequency and then VOS</li>
+<li>this applies to SVOS, too, obviously when you're in STOP mode</li>
+</ul>
+<h3>Frequency/VOS Table</h3>
+<p>I keep referencing it, but the <a href="https://www.st.com/content/ccc/resource/training/technical/product_training/group1/e3/f2/44/65/3f/04/40/4c/stm32h7rs-system-power-control-pwr/files/stm32h7rs-system-power-control-pwr.pdf/jcr:content/translations/en.stm32h7rs-system-power-control-pwr.pdf">STM32H7RS PWR PowerPoint</a> has been my main source for the article so far - it's literally made by ST themselves and so it's detailed enough as a standalone source for most parts.</p>
+<p>Anyway, enough praising... if you go to it <em>(on page 19)</em>, there's a table which outlines how high of a frequency you can get with VOS high and VOS low with different temperatures and <em>ECC</em> settings - <em>ECC</em> is <em>Error Correction Code</em>, something available on H5, H7, U3, U5, and C3 series STM32s, which can detect and potentially correct bit-errors in flash/RAM.</p>
+<h2>VOS In Power Modes</h2>
+<p>Now that we have VOS under our toolbelt, here is some extra info!</p>
+<h3>STOP</h3>
+<p>So I already mentioned the system can switch between power modes - namely <strong>RUN</strong> and <strong>STOP</strong> for this next part.</p>
+<p>When entering STOP mode, you can actually preselect which SVOS level you want to use in the <code>PWR_CR1</code> register - I'll leave you to look at your specific datasheet for that. Also, the system can switch between SVOS high and SVOS low in SLEEP mode as needed.</p>
+<p>STOP mode also sets the voltage regulator into low-power mode as it doesn't need its full power.</p>
+<p>Obviously, what SVOS selects will depend on the idle power consumption:</p>
+<ul>
+<li>if peripherals with <em>&quot;wake-up from stop&quot;</em> capabilities are active, SVOS high will likely be selected</li>
+<li>otherwise, if peripherals with that capability are off/absent, SVOS low will be selected</li>
+</ul>
+<p>If the MCU is in SVOS high while in STOP mode, peripherals using the LSI/LSE clocks can also continue operating besides peripherals with kernel clock request capabilities.</p>
+<h3>SLEEP</h3>
+<p>Only one real note here, and it's the same as STOP mode - voltage regulators remain active and can switch between VOS high and VOS low.</p>
+<h3>STANDBY</h3>
+<p>Also only one note here - when exiting STANDBY <em>(and STOP as well)</em>, the system goes into a VOS low RUN state.</p>
+<h2>Low-Power Monitoring Pins</h2>
+<p>GPIOA pins 5 and 6 can be used to track power mode transitions when configured with <code>PWR_CSLEEP</code> and <code>PWR_CDSLEEP</code>.</p>
+<p>Here's a table to summarise the pin values:
+| CSLEEP | CDSLEEP | Power Mode |
+| :----: | :-----: | :--------: |
+| 0      | 0       | RUN        |
+| 1      | 0       | SLEEP      |
+| 0      | 1       | RUN        |
+| 1      | 1       | STOP       |</p>
+<p>You'll notice a distinct lack of indication for <strong>SUSPEND</strong> mode - that's because in SUSPEND, <code>VCORE</code> is unpowered, which is what generates the CSLEEP and CDSLEEP signals.</p>
+<h2><code>VBAT</code> Mode</h2>
+<p>I talked about both <code>VBAT</code> and the backup domain separately, but here's how they work together.</p>
+<p>First, a hardware power switch toggles between <code>VDD</code> and <code>VBAT</code> automatically when <code>VDD</code> stoops below a voltage threshold, and back when it's above the threshold.</p>
+<p>When <code>VBAT</code> is powering the backup domain <em>(hence, <code>VDD</code> and most likely <code>VCORE</code> are off)</em>, only the Low-Speed External <em>(LSE)</em> oscillator is on. As a result, the Real-Time Clock <em>(RTC)</em> can also be on due to the LSE being able to clock it.</p>
+<p>One channel of the ADC2 <em>(Analog-to-Digital Converter)</em> gets dedicated to monitoring the external <code>VBAT</code> supply pin.</p>
+<p>I'm yet to write an article on the ADC <em>(frankly because I don't know enough to write anything worthwhile)</em>, but essentially it can turn continuous data <em>(<code>VBAT</code> input voltage in this case)</em> and turn it into discrete data that can be represented as 1’s and 0’s and used by the system.</p>
+<p>If you look into the <code>PWR_BDCR</code> register for a bit called <code>VBE</code>, you'll also find out you can charge the battery supply. It's automatically disabled, but when on and <code>VDD</code> is present, the battery can be charged.</p>
+<h2>Interrupts</h2>
+<p>There's only one relevant PWR interrupt <em>(talking about the PWR block itself, not things like RTC or WKUPx pins)</em> - and that's the PVD interrupt.</p>
+<p>PVD (<strong>P</strong>ower <strong>V</strong>oltage <strong>D</strong>etector) monitors <code>VDD</code> and <code>VDDA</code>, and if it detects a voltage outside of the set thresholds <em>(you set them in <code>PWR_CR1</code>)</em>, it raises the <code>PVDO</code> bit in <code>PWR_SR1</code> and generates an interrupt request*.</p>
+<p>If this happens, SLEEP and STOP modes are also automatically exited, but STANDBY mode isn't exited from what I could tell <em>(most likely because <code>VCORE</code> isn't running to power EXTI, genius...).</em></p>
+<p><em>* There is also 'AVD' which is for analog signals. It has the equivalents of threshold bits in <code>PWR_CR1</code> and an <code>AVDO</code> status bit in <code>PWR_SR1</code>, but the STM32H7RS HAL drivers don't seem to mention it - maybe I'm wrong and didn't dig around enough, so if you know something I don't, let me know! But besides that, just be aware if you plan on using analog signals for interrupts on the PWR block and you're using the HAL.</em></p>
+<h2>Option Bits</h2>
+<p>These are bits which you write into the flash memory to signal a permanent change to the system.</p>
+<p>Here are the relevant ones for the PWR block:</p>
+<ul>
+<li><code>nRST_STDBY</code> - when set to 0, STANDBY mode is disabled <em>(reset generated when entering STANDBY)</em></li>
+<li><code>nRST_STOP</code> - when set to 0, STOP mode is disabled <em>(reset generated when entering STOP)</em></li>
+</ul>
+<h2>Sources</h2>
+<p><a href="https://www.st.com/content/ccc/resource/training/technical/product_training/group1/e3/f2/44/65/3f/04/40/4c/stm32h7rs-system-power-control-pwr/files/stm32h7rs-system-power-control-pwr.pdf/jcr:content/translations/en.stm32h7rs-system-power-control-pwr.pdf">STMicroelectronics - STM32H7RS Power Controller</a>
+<a href="https://www.ti.com/lit/ml/slup239a/slup239a.pdf">Texas Instruments - Understanding Low Drop Out (LDO) Regulators</a>
+<a href="https://deepbluembedded.com/stm32-standby-mode-wakeup-pins-sources/">STM32 Standby Mode &amp; Wakeup Pins/Sources</a>
+<a href="https://www.st.com/resource/en/application_note/an4991-how-to-wake-up-an-stm32-microcontroller-from-lowpower-mode-with-the-usart-or-the-lpuart-stmicroelectronics.pdf">How to wake up an STM32 microcontroller from low-power mode with the USART or the LPUART</a>
+<a href="https://electronics.stackexchange.com/questions/688742/tri-state-buffer-why-is-it-called-high-impedance">Tri-state buffer, why is it called high-impedance?</a></p>
+            </main>
+        </div>
+
+        <script src="../script.js"></script>
+    </body>
+</html>
