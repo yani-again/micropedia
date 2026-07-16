@@ -28,7 +28,7 @@
             <p>More information on the <a href="https://ucpedia.com/">main page!</a></p>
         </div>
 
-        <span id="last-edited" style="display: none;">15 Jul 2026 at 22:20</span>
+        <span id="last-edited" style="display: none;">16 Jul 2026 at 21:33</span>
         <div id="main">
             <div id="contents">
                 <h4 class="underline">Contents</h4>
@@ -823,9 +823,97 @@ Fc = Fmax * (1 - (Md / 100))
 <li>CPU is in STOP mode, the peripheral is enabled with <code>PERxLPEN</code>, and its kernel clock is <em>lsi_ck</em> or <em>lse_ck</em></li>
 </ul>
 <p><em>* In these first two cases, the bus clock is also provided. It is not provided in the latter two cases.</em></p>
-<p>The only exception is the RNG peripheral, which is summarised by Figure 69 from the RM0477 below:</p>
-<p>IMG HERE</p>
-<h2>CPU/Bus Clock Gating</h2>
+<p>The only exception is the RNG peripheral, which is summarised by Table 69 from the RM0477 below:</p>
+<p><img src="./assets/table_69-rng_clock_enabling.png" alt="Table 69 - RNG Clock Enabling" /></p>
+<h2>CPU &amp; Bus Clock Gating</h2>
+<p>There are also rules on when the CPU and AXI/APB/AHB bus clocks are on and not gated.</p>
+<p>They are outlined in the RM0477, here they are copied directly:</p>
+<ul>
+<li>The CPU clock <em>(<code>rcc_cpu_ck</code>)</em> is enabled when the CPU is in Run or Sleep mode</li>
+<li>The AXI bridge clock is enabled when the CPU is in Run or Sleep mode</li>
+<li>Each AXI master and slave has an independent clock gating activated by default, to further reduce the power consumption. When activated the clock is automatically enabled on bus transaction request. The RCC AXI clocks gating disable register <em>(<code>RCC_CKGDISR</code>)</em> allows he application to control this behavior</li>
+<li>The AHB bus matrix clock is enabled if one of the following conditions is met:
+<ul>
+<li>The CPU is in Run mode</li>
+<li>The CPU is in Sleep mode, and at least one peripheral connected to this bridge have both its PERxEN and PERxLPEN set to 1</li>
+<li>The CPU is in Sleep mode, and AHB1, AHB2, AHB3, AHB4 or AHB5 has its clock enabled</li>
+</ul>
+</li>
+<li>The clocks of the bridges AHB1, 2, 3, 4, 5 are enabled when one of the following conditions is met:
+<ul>
+<li>The CPU is in Run mode</li>
+<li>The CPU is in Sleep mode with at least one peripheral connected to this bus having both its PERxEN and PERxLPEN set to 1</li>
+<li>The CPU is in Sleep mode and the APB bus connected to the AHB bridge has its clock enabled</li>
+</ul>
+</li>
+<li>The APB1, 2, 4, 5 clock busses are enabled when one of the following conditions is met:
+<ul>
+<li>The CPU is in Run mode</li>
+<li>When the CPU is in Sleep mode with at least one peripheral connected to this bus having both its PERxEN and PERxLPEN set to 1</li>
+</ul>
+</li>
+</ul>
+<h2>Low-Power Emulation</h2>
+<p>Since VCORE is restricted/stopped during STOP/STANDBY modes, they can only be emulated when running in debug mode.</p>
+<h3>SLEEP Emulation</h3>
+<p>Inside the <code>DBGMCU_CR</code> register is the <code>DBG_SLEEP</code> bit.</p>
+<p>When the processor enters SLEEP with this bit set to 1, these are all maintained active:</p>
+<ul>
+<li>processor clock</li>
+<li>enabled peripheral's clocks</li>
+<li>debug parts</li>
+<li>bus fabric</li>
+</ul>
+<h3>STOP Emulation</h3>
+<p>Also set in <code>DBGMCU_CR</code> register, by setting <code>DBG_STOP</code> bit to 1.</p>
+<p>When set and the MCU enters SLEEP:</p>
+<ul>
+<li>PWR and RCC remain on</li>
+<li>VCORE set to minimum VOS value</li>
+<li>HSI/CSI set as system clock <em>(depending on <code>STOPWUCK</code>)</em></li>
+<li>processor clock, <code>rcc_cpu_ck</code> is gated</li>
+<li>free-running clock, <code>rcc_fclk</code> is generated and the debug parts are clocked by that</li>
+<li>all peripheral clocks are gated, so if they need a kernel clock they must request it, and they need to be using HSI/CSI/LSE/LSI</li>
+<li>bus clocks are gated</li>
+</ul>
+<p>Upon waking up:</p>
+<ul>
+<li>the wake-up interrupt from the peripheral is sent to NVIC via EXTI</li>
+<li>VCORE remains at minimum VOS voltage</li>
+<li>the processor exits STOP and the RCC provides system/bus clocks</li>
+</ul>
+<h3>STANDBY Emulation</h3>
+<p>Also set in <code>DBGMCU_CR</code>, via the <code>DBG_STANDBY</code> bit set to 1.</p>
+<p>Upon entering STANDBY:</p>
+<ul>
+<li>VCORE voltage is not switched off, but kept at minimum VOS value</li>
+<li>all of the VCORE domain <em>(except debug, obviously)</em> is put under reset</li>
+<li>debug part also remains clocked</li>
+<li>VBAT and VDD domain peripherals are <strong>not</strong> reset</li>
+</ul>
+<p>Upon exiting STANDBY:</p>
+<ul>
+<li>option bytes are reloaded</li>
+<li>VCORE reset is released</li>
+<li>STANDBY flag is updated</li>
+</ul>
+<h2>RCC Interrupts</h2>
+<p>There are 3 main RCC interrupt lines:</p>
+<ol>
+<li><code>rcc_it</code>: used for general interrupts <em>(like PLL locking)</em></li>
+<li><code>rcc_hsecss_it</code>: used for HSE failure detection</li>
+<li><code>rcc_lsecss_it</code>: used for LSE failure detection</li>
+</ol>
+<p>The <code>RCC_CIER</code> register is used to enable/disable the interrupts, <strong>with an exception of <code>rcc_hsecss_it</code></strong> - that one is unmaskable and will always fire when detected, as long as the HSE is enabled.</p>
+<p>The <code>RCC_CIFR</code> register is used to read the flags and figure out which interrupt has fired. It is, however, read-only. You clear the flags by writing to <code>RCC_CICR</code>.</p>
+<p><em>The interrupt must be enabled for the interrupt flag bits to mean something, otherwise they can't be reliably checked.</em></p>
+<p>Table 70 below summarises the interrupt sources and their relevant bits:</p>
+<p><img src="./assets/table_70-interrupt_sources_and_control.png" alt="Table 70 - Interrupt sources and control" /></p>
+<h2>That's All...</h2>
+<p>What a long article!</p>
+<p>I don't expect me nor you to remember all of this from just a single read over it. Looking back on these articles, I think they're most effective when coupled with active learning - like programming something involving the article topic <em>(in this case, the RCC)</em> and going back and forth between your project, Micropedia, and your datasheet so you can get the relevant registers and bits.</p>
+<p>Regardless, if you've read any amount of this, thank you! It means a lot to me when my work is considered good enough by someone that they use it for anything substantial - like their own learning!</p>
+<p>I'm probably going to be writing an article on GPIO on the STM32 next, so if you want to know more about that, feel free to search at the top of the page, I might've already written that.</p>
 <h2>Sources</h2>
 <p><a href="https://www.st.com/content/ccc/resource/training/technical/product_training/group0/81/96/f3/1a/55/d9/40/52/STM32H7-System-Reset_and_clock_control_RCC/files/STM32H7-System-Reset_and_clock_control_RCC.pdf/_jcr_content/translations/en.STM32H7-System-Reset_and_clock_control_RCC.pdf">STMicroelectronics - STM32H7 RCC Presentation</a>
 <a href="https://www.st.com/resource/en/reference_manual/rm0477-stm32h7rx7sx-armbased-32bit-mcus-stmicroelectronics.pdf">STMicroelectronics - STM32H7S3L8 Reference Manual</a>
