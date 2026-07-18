@@ -28,7 +28,7 @@
             <p>More information on the <a href="https://ucpedia.com/">main page!</a></p>
         </div>
 
-        <span id="last-edited" style="display: none;">18 Jul 2026 at 10:54</span>
+        <span id="last-edited" style="display: none;">18 Jul 2026 at 18:18</span>
         <div id="main">
             <div id="contents">
                 <h4 class="underline">Contents</h4>
@@ -151,8 +151,82 @@
 <p>The USB protocol requires a very strict voltage level to operate <em>(3.3V)</em>, which may not be what your board is supplied with in all instances - the pins are up to 5V-tolerant and so the voltage may not match with USB's requirements.</p>
 <p>Traditionally, you'd use an external voltage shifter, but that adds cost and space.</p>
 <p>Luckily, the <em>VDDUSB</em> supply <em>(supplied by VDD33USB and regulated by VDD50USB - check out the PWR article)</em> can be used to independently supply up to 8 I/O pins. It seems likely that these 8 pins are inside the GPIOM port, as the H7RS datasheet lists 6 GPIOM pins being tied to the VDD33USB supply, though I will update this once I know more in the future.</p>
+<h2>HSE With GPIO</h2>
+<p>When the HSE is disabled, the <code>OSC_IN</code>/<code>OSC_OUT</code> pins can be used as plain GPIO pins like any other.</p>
+<p>But when it's enabled, there are 2 cases:</p>
+<ul>
+<li>using the on-board crystal, in which case both the <code>OSC_IN</code>/<code>OSC_OUT</code> pins become unusable as they're needed to generate the HSE clock</li>
+<li>using an external digital clock <em>(already a square wave)</em>, in which case only <code>OSC_IN</code> is needed - <code>OSC_OUT</code> can be used as a plain GPIO or in alternate function mode</li>
+</ul>
+<p>The alternate function mode for the latter case is called <code>OSC_EN</code>, and the only information I found about it was that it can be used to disable the external clock source, which is ideal for low-power applications and modes. <em>How</em> it does this, I was not able to find out. I would need to debug such a circuit to understand it, and currently I do not have the means nor experience, so I will update this page when I get more information on it.</p>
+<h2>MCO1/MCO2 With GPIO</h2>
+<p>As outlined in the RCC article, it's possible to take a clock source from the board* <em>(e.g. HSI, HSE, PLL, etc.)</em> and output it through a pin so that it may be used externally.</p>
+<p>This is done by setting the relevant pins into alternate function mode, which as before, you can find in your specific board's datasheet.</p>
+<p><em>* Not all clocks can be used for each MCO, your specific reference manual should outline exactly which sources you can use. Below are the options for the H7RS.</em></p>
+<p><img loading="lazy" src="./assets/stm32h7rs_gpio_presentation-mco_muxes.png" alt="STM32H7RS MCOx muxes" /></p>
+<h2>Pin Structures</h2>
+<p><em>This is more of a misc. section which relates to pin naming in some scenarios.</em></p>
+<p>You may see some pins named in this way:</p>
+<ul>
+<li><code>FT_x</code></li>
+<li><code>TT_x</code></li>
+</ul>
+<p>'FT' means Five-volt Tolerant, AKA the pin can work at five volts without issue. 'TT' means Three-volt Tolerant, which means the pin can only work at the board's voltage <em>(3.3V)</em>. Trying to use five volts on a 'TT' pin may damage internals.</p>
+<p>The '_x' part of the name can be one of several things:</p>
+<ul>
+<li>'_f' - I/O with Fast-mode Plus <em>(Fm+)</em> support, which allows up to 1Mbit/s transfer rate</li>
+<li>'_a' - I/O pins with an analog switch*, powered by VDDA</li>
+<li>'_u' - I/O pins with USB functionality, powered by VDDUSB</li>
+<li>'_d' - I/O pins for dead battery, I'm not entirely sure on how it works yet, I'd have to dive into the UCDP chapter in the future</li>
+<li>'_t' - I/O pins with tamper functionality during VBAT mode</li>
+<li>'_s' - I/O pins supplied <strong>only</strong> by VDDIOx*</li>
+<li>'_h' - I/O pins with high-speed, low-voltage mode <em>(more info in sub-section below)</em></li>
+<li>'_c' - I/O with power delivery, again to do with UCDP</li>
+</ul>
+<p><em>* <code>VDDIO</code> confused me at first as there's no mention of it in the PWR block diagram on the STM32H7RS. In short, VDDIO is just the power rail for I/O. It's like VDD but for the input/output of the board.</em></p>
+<p><em>* <code>VDDIO</code> confused me at first as there's no mention of it in the PWR block diagram on the STM32H7RS. It seems like on some boards, there is a dedicated pin called &quot;VDDIO&quot;, but on the H7RS there isn't. I found this tiny subtext inside of the datasheet which explains what VDDIO is on these boards: &quot;VDDIOx represents VDD or VDDXSPIx&quot; - both VDD and VDDXSPIx are rails shown on the PWR block, so this becomes clear.</em></p>
+<h3>HSLV Mode</h3>
+<p><strong>HSVL</strong> stands for <strong>H</strong>igh-<strong>S</strong>peed <strong>L</strong>ow <strong>V</strong>oltage.</p>
+<p>These are certain pins on certain boards <em>(like the H7RS)</em> which can be used at high speeds at low voltages - those pins which have the <code>_h</code> in the name.</p>
+<p>What <em>&quot;low-voltage&quot;</em> means here is that your VDDIOx can <strong>not</strong> be operating at 2.7V or above without damaging the device. This is why the bit has some level of protection: it can't be set unless the <code>VDDIO_HSLV</code>/<code>XSPI1_HSLV</code>/<code>XSPI2_HSLV</code> bit is set to 1.</p>
+<p>As you might've guessed by the wording, this is a software-only protection. There is no hardware which will stop you from setting HSLV or automatically disabling it when VDDIOx &gt; 2.7V, and as such you should only use it as a static option when you have a fixed power supply.</p>
+<p>Besides not enabling it at a high voltage, you should also <strong>not</strong> enable HSLV mode if <strong>all</strong> of a peripheral's connected I/O doesn't support it, otherwise there will be timing side effects.</p>
+<h2>Low-Power Modes</h2>
+<p>In all low-power modes except STANDBY, all pins remain active and configured.</p>
+<p>More specifically:</p>
+<ul>
+<li><strong>RUN mode:</strong> everything is active</li>
+<li><strong>SLEEP mode:</strong> everything is active, but GPIO can be configured to wake up the system with EXTI</li>
+<li><strong>STOP mode:</strong> pin configuration remains unchanged, again GPIO can be configured to wake up with EXTI</li>
+</ul>
+<p>For STANDBY mode, all pins get set to a high-impedance <em>(disconnected)</em> state and pull resistors are disabled. There are 4 exceptions:</p>
+<ol>
+<li>reset pad <em>(NRST pin)</em>, which is always avilable</li>
+<li><code>RTC_AF1</code>, if configured in tamper or RTC alarm out</li>
+<li>WKUP pins, if enabled</li>
+<li>I3C pin, only in pull configuration</li>
+</ol>
+<p>To wake up from STANDBY, the PA0, PA2, PC1, and PC13 pins can be used. The naming convention for these pins is &quot;Px&quot; for &quot;Port x&quot;, and the pin number. So, PA2 means &quot;GPIO port A, pin 2&quot;.</p>
+<p>Technically, there is also the RESET state, which the CPU is in while it's actively being held in a reset. In this case, all pins go into analog input mode <em>(basically disconnected)</em>, and there are no pins that can be used to wake up from this mode.</p>
+<p><em>* An analog switch is literally just a switch - it connects and disconnects the analog signal on demand. Connecting multiple of them makes it like a multiplexer for analog signals.</em></p>
+<h2>GPIO Structure</h2>
+<p>Figure 82 from the RM0477 reference manual below shows the structure of 3V and 5V tolerant GPIO.</p>
+<p>Once you see the diagram it becomes really easy to connect the dots, for example:</p>
+<ul>
+<li>the input and output buffers are directly wired together, which is why you can configure a pin in output mode and still read its state</li>
+<li>similarly, it's why you can configure a pin in input mode and still write to its output buffer without affecting anything <em>(the output control disallows the NMOS/PMOS resistors from letting current through)</em></li>
+<li>there's a MUX which selects if an output pin is normal GPIO or alternate function, and how AF numbers implicitly tie into this</li>
+<li>the RPU and RPD pull resistors are directly tied on the same wire as the pin, input, and output buffers, and how they tie with being enabled/disabled <em>(and crucially, why both can't be enabled at the same time, although I don't think you'd need a diagram for that conclusion)</em></li>
+</ul>
+<p>I like looking at diagram like this after learning most of the crucial parts as it's a nice way to tie knowledge together once you understand individual parts.</p>
+<p><img loading="lazy" src="./assets/figure_82-structure_of_TF_FF_GPIO.png" alt="Figure 82. Structure of three-volt or five-volt tolerant GPIO" /></p>
+<p><em>Note that on TT (three-volt tolerant) GPIO, the analog switch isn't there, it's just a straight wire from the pin to the analog domain.</em></p>
 <h2>Sources</h2>
-<p><a href="https://www.st.com/content/ccc/resource/training/technical/product_training/group1/08/9b/1b/83/c9/32/45/99/stm32h7rs-system-general-purpose-io-interface-gpio/files/stm32h7rs-system-general-purpose-io-interface-gpio.pdf/jcr:content/translations/en.stm32h7rs-system-general-purpose-io-interface-gpio.pdf">STMicroelectronics - STM32H7RS GPIO Presentation</a></p>
+<p><a href="https://www.st.com/resource/en/reference_manual/rm0477-stm32h7rx7sx-armbased-32bit-mcus-stmicroelectronics.pdf">STMicroelectronics - STM32H7RS Reference Manual RM0477</a>
+<a href="https://www.st.com/content/ccc/resource/training/technical/product_training/group1/08/9b/1b/83/c9/32/45/99/stm32h7rs-system-general-purpose-io-interface-gpio/files/stm32h7rs-system-general-purpose-io-interface-gpio.pdf/jcr:content/translations/en.stm32h7rs-system-general-purpose-io-interface-gpio.pdf">STMicroelectronics - STM32H7RS GPIO Presentation</a>
+<a href="https://community.st.com/stm32-mcus-boards-and-hardware-tools-26/stm32g030f6-osc-en-31373">STMicroelectronics Forum - STM32G030F6 OSC_EN</a>
+<a href="https://www.analog.com/en/resources/glossary/analog-switch.html">Analog Devices - What is an Analog Switch?</a>
+<a href="http://www.efton.sk/STM32/gotcha/g86.html">EFTON - STM32 Gotchas</a></p>
             </main>
         </div>
 
