@@ -1,0 +1,6 @@
+User-agent: *
+Disallow: /recent.txt
+Disallow: /all.txt
+Allow: /
+
+Sitemap: https://ucpedia.com/sitemap.xml
