@@ -11,7 +11,7 @@
     </head>
     <body>
         <header>
-            <img src="../assets/ucpedia logo.png" alt="logo">
+            <img alt="logo" src="../assets/ucpedia logo.png">
             <form action="/search.html">
                 <input name="search" id="search" type="text" placeholder="Search articles"><!--
                 --><button id="search-button">search</button>
@@ -135,7 +135,7 @@
 <h3>Reset Coverage</h3>
 <p>RM0477 provides Table 56 <em>(shown below)</em>, which checks a box if a particular reset affects a particular part of the board.</p>
 <p>If you want to reset a specific part of your MCU, have a look at what options you have using that table!</p>
-<p><img src="./assets/table_56-reset_coverage.png" alt="Table 56 - Reset Coverage" /></p>
+<p><img loading="lazy" src="./assets/table_56-reset_coverage.png" alt="Table 56 - Reset Coverage" /></p>
 <h2>Clocks</h2>
 <p>This is the other half of the RCC's role.</p>
 <p>Here are the available clock generators on the H7RS:</p>
@@ -555,7 +555,7 @@ That register is write-protected by default. To modify it, set the <code>DBP</co
 <p>The input frequency for the PLL <em>(<code>refx_ck</code>)</em> must be between 1-16 MHz, and the dividers in <code>RCC_PLLCKSELR</code> need to be configured to ensure this range, and the rough input frequency needs to be selected in the <code>RCC_PLLCFGR</code> register using the <code>PLLxRGE</code> bit to guarantee an optimal performance <em>(on the RCC clock tree, this range corresponds to the <code>refx_ck</code> clock)</em>.</p>
 <h3>Configuring The PLLs</h3>
 <p><em>Figure 48 from RM0477 - PLL block diagram</em>
-<img src="./assets/figure_48-pll_block_diagram.png" alt="STM32H7RS PLL block diagram" /></p>
+<img loading="lazy" src="./assets/figure_48-pll_block_diagram.png" alt="STM32H7RS PLL block diagram" /></p>
 <p>Each individual PLL can be turned on via its respective <code>PLLxON</code> bit, where you write 1 to turn it on <em>(the <code>x</code> means which PLL, so 1-3)</em>.</p>
 <p>Once the PLL has stabilised <em>(term for this is 'locked')</em>, the <code>PLLxRDY</code> bit is set. This is all a lot like the clocks so far.</p>
 <p>You also need to program the <code>DIVN</code> divider to get your expected VCO output frequency, <strong>keeping in mind</strong> the VCO's output range listed above.</p>
@@ -658,11 +658,11 @@ Fpll_x_ck = FVCO / (DIVx + 1)       // for VCOL mode, where x = P, Q, R, S, or T
 <h4>PLL Spread Spectrum Mode</h4>
 <p>As I explaned above, this deliberately generates a varied/jittery clock to reduce EMI outputs at one specific frequency.</p>
 <p>The way you enable it is by keeping SDM loaded with a 0 and turning <code>PLLxSSCGEN</code> to 1, and the PLL must be using VCOH.</p>
-<p><img src="./assets/figure_49-center_spread.png" alt="Triangular wave diagram" /></p>
+<p><img loading="lazy" src="./assets/figure_49-center_spread.png" alt="Triangular wave diagram" /></p>
 <p>Spread spectrum affects the frequency over time in a triangle wave form <em>(image below)</em>.</p>
 <p>The reason for a triangle wave is because it provides the most linear change over time - besides the peaks and dips, the line is always linearly changing - which spreads EMI emissions more evenly unlike other waves, such as sin/cos, which tend to concentrate the emissions around a particular point.</p>
 <p>And there's also a 2nd version of the above triangular wave. Here are both of them:</p>
-<p><img src="./assets/figure_49-spread_spectrum_modulation.png" alt="Triangular wave diagram" /></p>
+<p><img loading="lazy" src="./assets/figure_49-spread_spectrum_modulation.png" alt="Triangular wave diagram" /></p>
 <p>In both, ‘Fn' is the baseline frequency <em>(e.g. 400 MHz)</em>. In center-spread mode <em>(shown on the left)</em>, the frequency goes up and down <strong>around the baseline</strong> by an equal amount <em>(e.g. 398-402 MHz)</em>. In down-spread mode, the frequency only goes down, <strong>twice as much</strong> below the baseline as it would in center-spread mode <em>(e.g. 396-400 MHz)</em>.</p>
 <p>The way you pick which one you want is by asking <em>”Am I okay with the frequency occasionally hovering above the baseline frequency value?”</em></p>
 <h4>Configuring Spread Spectrum Mode</h4>
@@ -675,7 +675,7 @@ Fpll_x_ck = FVCO / (DIVx + 1)       // for VCOL mode, where x = P, Q, R, S, or T
 <p>Modulation frequency is related to the horizontal distance between 2 consecutive peaks on the triangle wave <em>(it's actually inversely proportional, but still related - see formulas below)</em>.</p>
 <p>Modulation depth is the vertical distance from the middle of the wave to the peak.</p>
 <p>Here's how <code>MODPER</code> and <code>INCSTEP</code> are related to modulation frequency/depth:</p>
-<p><img src="./assets/figure_50-triangular_waveform_generator.png" alt="Figure 50. Triangular waveform generator" /></p>
+<p><img loading="lazy" src="./assets/figure_50-triangular_waveform_generator.png" alt="Figure 50. Triangular waveform generator" /></p>
 <h4>Spread Spectrum Formulas</h4>
 <p>Modulation frequency:</p>
 <pre><code>Fmod = Fck_ref / (4 * MODPER)   // so as MODPER increases, Fmod decreases
@@ -724,11 +724,11 @@ Fc = Fmax * (1 - (Md / 100))
 <p>Now with all of this you might start to imagine <code>sys_ck</code> as a line that just goes into the CPU and gets used as the clock. But that's actually wrong. Figure 51 below shows the structure including the dividers.</p>
 <p>As you can see, in order to get to the CPU, <code>sys_ck</code> has to pass through CPRE, which divides it by 1-512. This division also directly affects the peripheral buses <em>(as they're downstream from this divider)</em>. In the same way, BMPRE is used to divide the AXI/AHB buses, but it also affects the APB bus.</p>
 <p>Bear these in mind when designing your clock tree, or use STM32CubeMX as it has a fantastic visualisation tool for the clocks <em>(I know, both of us probably enjoy register-level programming without any abstractions, but you have to admit when a tool makes the workflow much more effective!)</em></p>
-<p><img src="./assets/figure_51-core_and_bus_clock_generation.png" alt="Figure 51 - Core and bus clock generation" /></p>
+<p><img loading="lazy" src="./assets/figure_51-core_and_bus_clock_generation.png" alt="Figure 51 - Core and bus clock generation" /></p>
 <p><em>Note that the product datasheet specifies maximum frequencies for the CPU and buses, refer to it for your specific board and make sure you do not exceed them!</em></p>
 <h2>Clock Protection</h2>
 <p>Besides being unable to disable <code>sys_ck</code>, HSE failure detection, and send invalid write operations to FMC/XSPI blocks, here's a summary from RM0477 on additional clock protections:</p>
-<p><img src="./assets/table_62-clock_protection_summary.png" alt="STM32H7RS clock protection" /></p>
+<p><img loading="lazy" src="./assets/table_62-clock_protection_summary.png" alt="STM32H7RS clock protection" /></p>
 <h2>Clocks In STOP/STANDBY</h2>
 <p>Recap of the PWR block article: in STOP, all system clocks are disabled, including their sources:</p>
 <ul>
@@ -807,7 +807,7 @@ Fc = Fmax * (1 - (Md / 100))
 <p>This means during the transition time, there is a ‘gap' where a clock is missing for the peripheral, 2-3 clock cycles of the new clock as a worst-case scenario. The old clock source also continues running for a maximum of 1.5 clock cycles before it is disabled. These delays are there so the peripheral doesn't get enabled halfway through a clock period, which could cause a short pulse of the high clock period and result in issues.</p>
 <p>Besides this, both the old and new clock <strong>must</strong> be running during the transition time of the peripheral clock, else the transition will fail and the firmware will need to manually recover by providing a different clock to <code>in1_ck</code> <em>(see Figure 74 from RM0477 below)</em>, or changing the source using <code>PERxSEL</code> again.</p>
 <p><strong>Note that this applies to both kernel and bus clocks.</strong></p>
-<p><img src="./assets/figure_74-kernel_clock_switching.png" alt="figure 74 - kernel clock switching" /></p>
+<p><img loading="lazy" src="./assets/figure_74-kernel_clock_switching.png" alt="figure 74 - kernel clock switching" /></p>
 <h2>Peripheral Clock Gating</h2>
 <p>The kernel and bus clocks <em>(<code>rcc_perx_ker_ck</code>/<code>rcc_perx_bus_ck</code>)</em> can be gated in the following ways:</p>
 <ul>
@@ -824,7 +824,7 @@ Fc = Fmax * (1 - (Md / 100))
 </ul>
 <p><em>* In these first two cases, the bus clock is also provided. It is not provided in the latter two cases.</em></p>
 <p>The only exception is the RNG peripheral, which is summarised by Table 69 from the RM0477 below:</p>
-<p><img src="./assets/table_69-rng_clock_enabling.png" alt="Table 69 - RNG Clock Enabling" /></p>
+<p><img loading="lazy" src="./assets/table_69-rng_clock_enabling.png" alt="Table 69 - RNG Clock Enabling" /></p>
 <h2>CPU &amp; Bus Clock Gating</h2>
 <p>There are also rules on when the CPU and AXI/APB/AHB bus clocks are on and not gated.</p>
 <p>They are outlined in the RM0477, here they are copied directly:</p>
@@ -908,7 +908,7 @@ Fc = Fmax * (1 - (Md / 100))
 <p>The <code>RCC_CIFR</code> register is used to read the flags and figure out which interrupt has fired. It is, however, read-only. You clear the flags by writing to <code>RCC_CICR</code>.</p>
 <p><em>The interrupt must be enabled for the interrupt flag bits to mean something, otherwise they can't be reliably checked.</em></p>
 <p>Table 70 below summarises the interrupt sources and their relevant bits:</p>
-<p><img src="./assets/table_70-interrupt_sources_and_control.png" alt="Table 70 - Interrupt sources and control" /></p>
+<p><img loading="lazy" src="./assets/table_70-interrupt_sources_and_control.png" alt="Table 70 - Interrupt sources and control" /></p>
 <h2>That's All...</h2>
 <p>What a long article!</p>
 <p>I don't expect me nor you to remember all of this from just a single read over it. Looking back on these articles, I think they're most effective when coupled with active learning - like programming something involving the article topic <em>(in this case, the RCC)</em> and going back and forth between your project, Micropedia, and your datasheet so you can get the relevant registers and bits.</p>
