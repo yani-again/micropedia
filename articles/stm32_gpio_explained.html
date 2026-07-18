@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta http-equiv="X-UA-Compatible" content="ie=edge">
+        <title>STM32 GPIO (General Purpose I/O) Explained - MicroPedia</title>
+        <link rel="stylesheet" href="../reset.css">
+        <link rel="stylesheet" href="../style.css">
+        <link rel="icon" href="../public/favicon.ico" type="image/x-icon">
+    </head>
+    <body>
+        <header>
+            <img src="../assets/ucpedia logo.png" alt="logo">
+            <form action="/search.html">
+                <input name="search" id="search" type="text" placeholder="Search articles"><!--
+                --><button id="search-button">search</button>
+            </form>
+        </header>
+
+        <div id="disclaimer" class="display-none">
+            <span class="exit" onClick="hide_disclaimer()">x</span>
+            <h3>SOME NOTES!</h3>
+            <ol>
+                <li>This website exclusively focuses on STM32 microcontrollers. If you are using something else, take this information with a grain of salt. If you are using something with a Cortex-M processor, there is still valuable information you can extract, though not every article will be applicable to a non-STM32 microcontroller.</li>
+                <li>I'm a university student and this site is my passive personal project. I collect my notes as I learn bare-metal embedded programming, then I tidy and upload them here. Being in the learning phase, there are likely a bunch of mistakes around the site. If you spot any, <a href="https://github.com/yani-again" target="_blank">please let me know!</a></li>
+            </ol>
+            <p>More information on the <a href="https://ucpedia.com/">main page!</a></p>
+        </div>
+
+        <span id="last-edited" style="display: none;">18 Jul 2026 at 10:30</span>
+        <div id="main">
+            <div id="contents">
+                <h4 class="underline">Contents</h4>
+                <div></div>
+            </div>
+
+            <main>
+<h1>STM32 GPIO (General Purpose I/O) Explained</h1>
+<p>GPIO on the STM32 is a versatile controller which lets you do the part of embedded everyone thinks about first: <em>use the board's pins to talk with peripherals</em>.</p>
+<p>And surprisingly, unlike a lot of the STM32 world, GPIO is <em>relatively simple to understand and use!</em></p>
+<p>So let's start!</p>
+<h2>Overview</h2>
+<p>GPIO is a controllable block that allows independent configuration of each pin on the development board. Pins are the metal bits you connect a wire, pin headers, or breadboard holes to.</p>
+<p>You can do a lot of things with these pins:</p>
+<ul>
+<li>use them as output to give data/instructions to an external peripheral <em>(e.g. an LED, I2C screen)</em></li>
+<li>use them as input to receive data/instructions <em>(e.g. UART data transfer, reading from a sensor)</em></li>
+<li>‘alternate functions', like providing an I2C clock line</li>
+</ul>
+<p>However, GPIO isn't one central block. There are multiple ports, each controlling up to 16 pins on its own. Each port has a name like <strong>GPIOx</strong>, where <strong>x</strong> is a letter of the alphabet, in chronological order - <strong>you'll see this generalised term referenced a lot</strong>:</p>
+<ul>
+<li>GPIOA</li>
+<li>GPIOB</li>
+<li>GPIOC</li>
+<li>etc.</li>
+</ul>
+<h2>Pin Modes</h2>
+<p>Each pin can be configured differently and independently of all other pins, which is done across 5 axis <em>(these axis are not mutually exclusive - they interact with each other in various ways)</em>:</p>
+<ol>
+<li>Mode</li>
+<li>Output type</li>
+<li>Speed</li>
+<li>Pull-up/pull-down</li>
+<li>Alternate function</li>
+</ol>
+<h3>Mode</h3>
+<p>This defines <em>how</em> the pin operates. There are 4 options:</p>
+<ol>
+<li><strong>Input</strong> - read pin state</li>
+<li><strong>Output</strong> - drive pin state</li>
+<li><strong>Alternate function</strong> - hand pin over to peripheral, it'll manage it</li>
+<li><strong>Analog</strong> - disconnect digital circuitry, used for analog or power saving when pin is unused <em>(usually default mode)</em></li>
+</ol>
+<p>On the STM32H7RS, the GPIO mode is controlled through the <code>GPIOx_MODER</code> register, again replacing the 'x' with your GPIO port letter.</p>
+<h3>Output Type</h3>
+<p><em>These configuration settings are only valid when the pin is doing output, either in output mode or alternate function mode, as long as it's outputting something and driving the pin state.</em></p>
+<p>Only 2 options exist here:</p>
+<ol>
+<li><strong>Push-pull</strong> - actively drives pin high and low</li>
+<li><strong>Open-drain</strong> - only actively drives low, high has to be driven separately <em>(e.g. internal pull-up resistor, external signal/resistor)</em></li>
+</ol>
+<p>Open-drain is commonly used for any bus that's shared by multiple devices. That way, if a device wants to start sending data, it just needs to drive the weakly-pulled 1 to a 0, and the other devices will see it. If every device on a shared bus was push-pull, then as soon as one device wants to change the line state from a 1 to a 0, it would cause a conflict with the other devices, which are actively keeping it at a 1.</p>
+<p>On the STM32H7RS, the GPIO output type is controlled through the <code>GPIOx_OTYPER</code> register.</p>
+<h3>Speed</h3>
+<p>In this case, 'speed' specifically refers to the <em>slew</em> speed, which is how fast the pin changes its state from 0-to-1 and 1-to-0 when the pin is driven by the board, and how much current it can source/sink <em>(essentially, it makes transition edges steeper and thus makes transitions faster)</em>.</p>
+<p>This does come with 2 important tradeoffs:</p>
+<ol>
+<li>higher power consumption</li>
+<li>more EMI emissions</li>
+</ol>
+<p>As for the actual options, at least on the STM32H7RS and its reference manual, they are:</p>
+<ul>
+<li>low speed</li>
+<li>medium speed</li>
+<li>high speed</li>
+<li>very high speed</li>
+</ul>
+<p>And yes, these are cryptic, which is why you need to go to your specific board's datasheet to find out what clock frequency ranges they recommend using each level for. It's better to check than to default to <em>'very high'</em> for every single pin</p>
+<p>For the STM32H7RS specifically, the GPIO speed is controlled through the <code>GPIOx_OSPEEDR</code> register, and here are the ranges:</p>
+<ul>
+<li><strong>Low speed:</strong> 5-16 MHz</li>
+<li><strong>Medium speed:</strong> 12-60 MHz</li>
+<li><strong>High speed:</strong> 30-133 MHz</li>
+<li><strong>Very high speed:</strong> 50-200 MHz</li>
+</ul>
+<p>This means is if your GPIO pin expects to operate at a specific frequency, you'd pick the slowest OSPEEDR option to match.</p>
+<h3>Pull-up/pull-down</h3>
+<p>These are your regular pull resistors:</p>
+<ul>
+<li>in &quot;pull-up&quot; mode, a resistor weakly pulls the GPIO pin to a logical state of 1 when it would otherwise be floating</li>
+<li>in &quot;pull-down&quot; mode, a resistor weakly pulls the GPIO pin to a logical state of 0 when it would otherwise be floating</li>
+<li><em>you can also select neither, mentioning for completeness</em></li>
+</ul>
+<p>Because it's a <em>weakly pulling resistor</em>, it can keep a floating line at a definite 0/1, but as soon as something wants to output a different logical level, its voltage overwhelms what the resistor can let through, and so a pull-down resistor doesn't block a 1 from being actively driven by something, and vice-versa.</p>
+<p>That's what makes pull resistors so good for shared buses.</p>
+<p>A common pairing here is open-drain output mode with a pull-up resistor. The pull-up keeps the line at a 1 when it's unused <em>(or when a 1 is meant to be signalled)</em>, and the open-drain part pulls the line actively to a 0 when it wants to signal a 0.</p>
+<p>As always, on the STM32H7RS, this is controlled by the <code>GPIOx_PUPDR</code> register.</p>
+<h3>Alternate Function</h3>
+<p>Without alternate functions, GPIO is only able to be controlled manually and used to read the pin state externally.</p>
+<p>Alternate functions allow peripherals to take over the pin and use them to interface with the <em>'outside world'</em>. I'm talking things like I2C providing its clock line, UART transmit/receive lines, external debugger pins, basically things which make your board more than just a fancy LED blinker with some internal logic - the part which makes embedded systems... well... <em>embedded</em>.</p>
+<p>That's it for the over-the-top introduction, I promise.</p>
+<p>Just about every pin can be set to serve an alternate function through its AF <em>(Alternate Function)</em> number, <code>AF0-AF15</code>. If the pin is pin 0-7, you write into the <code>GPIOx_AFRL</code> register, and if it's pin 8-15, you write to <code>GPIOx_AFRH</code>, where L = low-order and H = high-order.</p>
+<p>When an alternate function is set, it just flips a multiplexer which routes if GPIO or the peripheral gets control of the pin.</p>
+<p>You'll have to cross-reference what each AF number actually means for each GPIOx port, which you'd usually find in your product datasheet <em>(not reference manual)</em>, as there are too many to list here - even just on the STM32H7RS.</p>
+<p>It's also worth noting that multiple peripherals can share the same pin - a multiplexer selects which alternate function gets access to it <em>(through the AF number)</em> as only one peripheral can use it at a single time.</p>
+<h3>The Registers, Combined</h3>
+<p>The table below <em>(from the STM32H7RS GPIO presentation, link in sources)</em> shows how a pin is configured based off what its bits in each register is set to.</p>
+<p><img src="./assets/stm32h7rs_gpio_presentation-gpio_pin_configuration.png" alt="GPIOx pin configuration table" /></p>
+<h3>After Reset</h3>
+<p>The default state for GPIO pins after a reset is:</p>
+<ul>
+<li>alternate functions are <strong>not</strong> active</li>
+<li>most pins are in analog mode for power saving</li>
+</ul>
+<p>Debug pins, however, are an exception. Any JTAG/SWD pins <em>(pins configured in alternate function, pull-up/pull-down mode)</em> remain unaffected during and after a reset.</p>
+<p><em>The <a href="https://www.st.com/content/ccc/resource/training/technical/product_training/group1/08/9b/1b/83/c9/32/45/99/stm32h7rs-system-general-purpose-io-interface-gpio/files/stm32h7rs-system-general-purpose-io-interface-gpio.pdf/jcr:content/translations/en.stm32h7rs-system-general-purpose-io-interface-gpio.pdf">H7RS presentation</a> has a list of which pins remain and what configuration they're in.</em></p>
+<h2>Read/Write To Pins</h2>
+<p>Once you've configured your pins, you'd do your typical day-to-day access using these registers:</p>
+<ul>
+<li><code>GPIOx_IDR</code> - read-only, tells you what logic level every pin on the port is at <em>(0 or 1)</em></li>
+<li><code>GPIOx_ODR</code> - read/write, lets you read a pin's state and drive it by writing* - obviously that only does something when you have the pin in output mode</li>
+<li><code>GPIOx_BSRR</code> - write-only, used to set/reset a specific pin's logical level**</li>
+<li><code>GPIOx_BRR</code> - write-only, used to reset a pin's logical level - <em>similar to BSRR but it can only reset a pin to 0</em></li>
+</ul>
+<p>There is also this interesting register - <code>GPIOx_LCKR</code> - which locks a pin's configuration and prevents <strong>any</strong> further modifications to it until a MCU/peripheral reset.</p>
+<p><em>* This is not an 'atomic' write - it can not be done in one Assembly instruction as you first need to mask what bit you want to set/reset.</em></p>
+<p><em>** This is the 'better' way of writing to GPIO pins as it can be done atomically. The reason is because you only need to write a 1 to the pin you want to affect (e.g. if pin 3 is set to 1, and you want to set a 1 to pin 2, you do not need to put a 1 in pin 3's spot to maintain its state - it's unaffected by a 0 in that position. You just write to the pins you want to affect, removing the need for a mask and making writes atomic). Applies to BRR register as well.</em></p>
+<h2>VDDUSB Voltage Supply</h2>
+<p><em>The sections from here on aren't critical to the understanding of STM32 GPIO, and many of them may be specific to the STM32H7RS. They are still useful, especially if you have a similar board.</em></p>
+<p>The USB protocol requires a very strict voltage level to operate <em>(3.3V)</em>, which may not be what your board is supplied with in all instances - the pins are up to 5V-tolerant and so the voltage may not match with USB's requirements.</p>
+<p>Traditionally, you'd use an external voltage shifter, but that adds cost and space.</p>
+<p>Luckily, the <em>VDDUSB</em> supply <em>(supplied by VDD33USB and regulated by VDD50USB - check out the PWR article)</em> can be used to independently supply up to 8 I/O pins. It seems likely that these 8 pins are inside the GPIOM port, as the H7RS datasheet lists 6 GPIOM pins being tied to the VDD33USB supply, though I will update this once I know more in the future.</p>
+<h2>Sources</h2>
+<p><a href="https://www.st.com/content/ccc/resource/training/technical/product_training/group1/08/9b/1b/83/c9/32/45/99/stm32h7rs-system-general-purpose-io-interface-gpio/files/stm32h7rs-system-general-purpose-io-interface-gpio.pdf/jcr:content/translations/en.stm32h7rs-system-general-purpose-io-interface-gpio.pdf">STMicroelectronics - STM32H7RS GPIO Presentation</a></p>
+            </main>
+        </div>
+
+        <script src="../script.js"></script>
+    </body>
+</html>
