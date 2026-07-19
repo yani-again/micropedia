@@ -28,7 +28,7 @@
             <p>More information on the <a href="https://ucpedia.com/">main page!</a></p>
         </div>
 
-        <span id="last-edited" style="display: none;">18 Jul 2026 at 18:18</span>
+        <span id="last-edited" style="display: none;">19 Jul 2026 at 21:28</span>
         <div id="main">
             <div id="contents">
                 <h4 class="underline">Contents</h4>
@@ -133,7 +133,7 @@
 <li>alternate functions are <strong>not</strong> active</li>
 <li>most pins are in analog mode for power saving</li>
 </ul>
-<p>Debug pins, however, are an exception. Any JTAG/SWD pins <em>(pins configured in alternate function, pull-up/pull-down mode)</em> remain unaffected during and after a reset.</p>
+<p>Debug pins, however, are an exception. Any JTAG/SWD pins are configured in alternate function, pull-up/pull-down mode after a reset.</p>
 <p><em>The <a href="https://www.st.com/content/ccc/resource/training/technical/product_training/group1/08/9b/1b/83/c9/32/45/99/stm32h7rs-system-general-purpose-io-interface-gpio/files/stm32h7rs-system-general-purpose-io-interface-gpio.pdf/jcr:content/translations/en.stm32h7rs-system-general-purpose-io-interface-gpio.pdf">H7RS presentation</a> has a list of which pins remain and what configuration they're in.</em></p>
 <h2>Read/Write To Pins</h2>
 <p>Once you've configured your pins, you'd do your typical day-to-day access using these registers:</p>
@@ -151,11 +151,11 @@
 <p>The USB protocol requires a very strict voltage level to operate <em>(3.3V)</em>, which may not be what your board is supplied with in all instances - the pins are up to 5V-tolerant and so the voltage may not match with USB's requirements.</p>
 <p>Traditionally, you'd use an external voltage shifter, but that adds cost and space.</p>
 <p>Luckily, the <em>VDDUSB</em> supply <em>(supplied by VDD33USB and regulated by VDD50USB - check out the PWR article)</em> can be used to independently supply up to 8 I/O pins. It seems likely that these 8 pins are inside the GPIOM port, as the H7RS datasheet lists 6 GPIOM pins being tied to the VDD33USB supply, though I will update this once I know more in the future.</p>
-<h2>HSE With GPIO</h2>
-<p>When the HSE is disabled, the <code>OSC_IN</code>/<code>OSC_OUT</code> pins can be used as plain GPIO pins like any other.</p>
-<p>But when it's enabled, there are 2 cases:</p>
+<h2>HSE/LSE With GPIO</h2>
+<p>When the HSE/LSE are disabled, the <code>OSC_IN</code>/<code>OSC_OUT</code> pins can be used as plain GPIO pins like any other.</p>
+<p>But when either is enabled, there are 2 cases:</p>
 <ul>
-<li>using the on-board crystal, in which case both the <code>OSC_IN</code>/<code>OSC_OUT</code> pins become unusable as they're needed to generate the HSE clock</li>
+<li>using the on-board crystal, in which case both the <code>OSC_IN</code>/<code>OSC_OUT</code> pins become unusable as they're needed to generate the clock</li>
 <li>using an external digital clock <em>(already a square wave)</em>, in which case only <code>OSC_IN</code> is needed - <code>OSC_OUT</code> can be used as a plain GPIO or in alternate function mode</li>
 </ul>
 <p>The alternate function mode for the latter case is called <code>OSC_EN</code>, and the only information I found about it was that it can be used to disable the external clock source, which is ideal for low-power applications and modes. <em>How</em> it does this, I was not able to find out. I would need to debug such a circuit to understand it, and currently I do not have the means nor experience, so I will update this page when I get more information on it.</p>
@@ -183,14 +183,14 @@
 <li>'_h' - I/O pins with high-speed, low-voltage mode <em>(more info in sub-section below)</em></li>
 <li>'_c' - I/O with power delivery, again to do with UCDP</li>
 </ul>
-<p><em>* <code>VDDIO</code> confused me at first as there's no mention of it in the PWR block diagram on the STM32H7RS. In short, VDDIO is just the power rail for I/O. It's like VDD but for the input/output of the board.</em></p>
-<p><em>* <code>VDDIO</code> confused me at first as there's no mention of it in the PWR block diagram on the STM32H7RS. It seems like on some boards, there is a dedicated pin called &quot;VDDIO&quot;, but on the H7RS there isn't. I found this tiny subtext inside of the datasheet which explains what VDDIO is on these boards: &quot;VDDIOx represents VDD or VDDXSPIx&quot; - both VDD and VDDXSPIx are rails shown on the PWR block, so this becomes clear.</em></p>
+<p><em>* <code>VDDIO</code> confused me at first as there's no mention of it in the PWR block diagram on the STM32H7RS. It seems like on some boards, there is a dedicated pin called &quot;VDDIO&quot;, but on the H7RS there isn't. I found this tiny subtext inside of the datasheet which explains what VDDIO is on these boards: &quot;VDDIOx represents VDD or VDDXSPIx&quot; - so all I/O on the H7RS is powered by VDD, with the exception of the XSPI1/XSPI2 pins.</em></p>
 <h3>HSLV Mode</h3>
-<p><strong>HSVL</strong> stands for <strong>H</strong>igh-<strong>S</strong>peed <strong>L</strong>ow <strong>V</strong>oltage.</p>
+<p><strong>HSVL</strong> stands for <strong>H</strong>igh-<strong>S</strong>peed <strong>L</strong>ow <strong>V</strong>oltage, and it involves a bit being set to indicate if the output speed is optimised to run at a high voltage <em>(3.3V)</em> or low voltage <em>(1.8V)</em>. At low voltages, the I/O can optimise itself to run at a higher output speed.</p>
 <p>These are certain pins on certain boards <em>(like the H7RS)</em> which can be used at high speeds at low voltages - those pins which have the <code>_h</code> in the name.</p>
 <p>What <em>&quot;low-voltage&quot;</em> means here is that your VDDIOx can <strong>not</strong> be operating at 2.7V or above without damaging the device. This is why the bit has some level of protection: it can't be set unless the <code>VDDIO_HSLV</code>/<code>XSPI1_HSLV</code>/<code>XSPI2_HSLV</code> bit is set to 1.</p>
 <p>As you might've guessed by the wording, this is a software-only protection. There is no hardware which will stop you from setting HSLV or automatically disabling it when VDDIOx &gt; 2.7V, and as such you should only use it as a static option when you have a fixed power supply.</p>
 <p>Besides not enabling it at a high voltage, you should also <strong>not</strong> enable HSLV mode if <strong>all</strong> of a peripheral's connected I/O doesn't support it, otherwise there will be timing side effects.</p>
+<p><em>Note that the CSI has to be enabled for this mode to work.</em></p>
 <h2>Low-Power Modes</h2>
 <p>In all low-power modes except STANDBY, all pins remain active and configured.</p>
 <p>More specifically:</p>
@@ -199,6 +199,7 @@
 <li><strong>SLEEP mode:</strong> everything is active, but GPIO can be configured to wake up the system with EXTI</li>
 <li><strong>STOP mode:</strong> pin configuration remains unchanged, again GPIO can be configured to wake up with EXTI</li>
 </ul>
+<p>Note that all GPIO ports have some kind of wake-up functionality, which I have to write about when I work on the EXTI chapter soon <em>(might be out by the time you read this)</em>.</p>
 <p>For STANDBY mode, all pins get set to a high-impedance <em>(disconnected)</em> state and pull resistors are disabled. There are 4 exceptions:</p>
 <ol>
 <li>reset pad <em>(NRST pin)</em>, which is always avilable</li>
@@ -221,6 +222,40 @@
 <p>I like looking at diagram like this after learning most of the crucial parts as it's a nice way to tie knowledge together once you understand individual parts.</p>
 <p><img loading="lazy" src="./assets/figure_82-structure_of_TF_FF_GPIO.png" alt="Figure 82. Structure of three-volt or five-volt tolerant GPIO" /></p>
 <p><em>Note that on TT (three-volt tolerant) GPIO, the analog switch isn't there, it's just a straight wire from the pin to the analog domain.</em></p>
+<h2><code>GPIOx_LCKR</code> Locking</h2>
+<p>If you ever set the configuration of a GPIO pin and <strong>do not</strong> want it to be configured again during the uptime of the system*, you can do that through this register.</p>
+<p>It's structured like this:</p>
+<ul>
+<li><strong>bits 0-15:</strong> select which pin you want to lock the configuration for <em>(by setting it to 1)</em></li>
+<li><strong>bit 16:</strong> confirm the selection</li>
+</ul>
+<p>Confirming the selection, however, isn't as simple as writing 1 to bit 16. That may lead to accidental writes and locks of a pin's configuration. There is a specific write sequence you have to follow.</p>
+<p>Before doing so, it's worth noting a few things:</p>
+<ul>
+<li>the value of bits 0-15 must <strong>not</strong> be modified for the entire duration of the write sequence</li>
+<li>errors in the lock sequence will result in the lock being aborted</li>
+<li>you have to perform a word-access <em>(32-bits long)</em> to the register as a result <em>(only way to set all 17 bits in one instruction)</em></li>
+<li>after a lock, bit 16 of the <code>GPIOx_LCKR</code> register will <strong>always</strong> return 1 when read, until a MCU/peripheral reset.</li>
+</ul>
+<p><em>Once locked, a pin's configuration can't be modified until a MCU or peripheral reset.</em></p>
+<h3>The Write Sequence*</h3>
+<p>If you look at the reference manual and jump to this register's page, you might be confused if it looks anything like the H7RS write sequence:</p>
+<p><img loading="lazy" src="./assets/rm0477-gpiox_lckr_sequence.png" alt="RM0477 GPIOx LCKr register write sequence" /></p>
+<p>Well... you don't...</p>
+<p>I'm not sure if the reference manual isn't written coherently, or if I'm not understanding something, but here's the sequence** simplified, in C:</p>
+<pre><code class="language-c">// lock_bits = bits 0-15, set by you beforehand to lock certain pins
+GPIOx-&gt;LCKR = (1 &lt;&lt; 16U) | lock_bits;
+GPIOx-&gt;LCKR = (0 &lt;&lt; 16U) | lock_bits;
+GPIOx-&gt;LCKR = (1 &lt;&lt; 16U) | lock_bits;
+
+// optional step on the H7RS, necessary for some MCUs: read the register
+(void)GPIOx-&gt;LCKR;
+</code></pre>
+<p><em>&quot;How do you add 1 and the 0-15 bits, then place them inside the 16th bit?&quot;</em></p>
+<p><em>** This is specific to the STM32H7RS - it may vary for your board, so check that out before doing anything.</em></p>
+<h2>Final Words</h2>
+<p>I'm writing this after the RCC article, and all I want to say is that this was much shorter and I'm very glad it was so!</p>
+<p><em>There are a few details I missed out - in particular I/O cell compensation, which adjusts the slew rate depending on conditions in order to keep the noise on the power supply lower. I will likely write a section on it in the future, it's just not a priority right now.</em></p>
 <h2>Sources</h2>
 <p><a href="https://www.st.com/resource/en/reference_manual/rm0477-stm32h7rx7sx-armbased-32bit-mcus-stmicroelectronics.pdf">STMicroelectronics - STM32H7RS Reference Manual RM0477</a>
 <a href="https://www.st.com/content/ccc/resource/training/technical/product_training/group1/08/9b/1b/83/c9/32/45/99/stm32h7rs-system-general-purpose-io-interface-gpio/files/stm32h7rs-system-general-purpose-io-interface-gpio.pdf/jcr:content/translations/en.stm32h7rs-system-general-purpose-io-interface-gpio.pdf">STMicroelectronics - STM32H7RS GPIO Presentation</a>
