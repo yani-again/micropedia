@@ -171,7 +171,7 @@ pre {
     border: 1px solid var(--darkgray);
 }
 
-main img {
+main img, main svg {
     max-width: 75%;
     border: 2px solid var(--darkgray);
     box-shadow: 0 0 10px 3px #00000034;
