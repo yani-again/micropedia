@@ -169,6 +169,7 @@ pre {
     border-radius: 15px;
     background-color: var(--gray);
     border: 1px solid var(--darkgray);
+    margin-top: 15px;
 }
 
 main img, main svg {
