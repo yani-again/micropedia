@@ -186,6 +186,21 @@ main img, main svg {
     font-style: italic;
 }
 
+table {
+    border-collapse: collapse;
+    margin-top: 1.4ch;
+}
+table th, table td {
+    border: 1px solid var(--darkgray);
+}
+table th {
+    padding: 8px 10px 6px;
+    background-color: var(--lightgray);
+}
+table td {
+    padding: 5px 10px;
+}
+
 @media screen and (max-width: 768px) {
     #main {
         flex-direction: column;
