@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta http-equiv="X-UA-Compatible" content="ie=edge">
+        <title>STM32 UART (Universal Asynchronous Receiver-Transmitter) - MicroPedia</title>
+        <link rel="stylesheet" href="../reset.css">
+        <link rel="stylesheet" href="../style.css">
+        <link rel="icon" href="../public/favicon.ico" type="image/x-icon">
+    </head>
+    <body>
+        <header>
+            <img alt="logo" src="../assets/ucpedia logo.png">
+            <form action="/search.html">
+                <input name="search" id="search" type="text" placeholder="Search articles"><!--
+                --><button id="search-button">search</button>
+            </form>
+        </header>
+
+        <div id="disclaimer" class="display-none">
+            <span class="exit" onClick="hide_disclaimer()">x</span>
+            <h3>SOME NOTES!</h3>
+            <ol>
+                <li>This website exclusively focuses on STM32 microcontrollers. If you are using something else, take this information with a grain of salt. If you are using something with a Cortex-M processor, there is still valuable information you can extract, though not every article will be applicable to a non-STM32 microcontroller.</li>
+                <li>I'm a university student and this site is my passive personal project. I collect my notes as I learn bare-metal embedded programming, then I tidy and upload them here. Being in the learning phase, there are likely a bunch of mistakes around the site. If you spot any, <a href="https://github.com/yani-again" target="_blank">please let me know!</a></li>
+            </ol>
+            <p>More information on the <a href="https://ucpedia.com/">main page!</a></p>
+        </div>
+
+        <span id="last-edited" style="display: none;">26 Jul 2026 at 23:26</span>
+        <div id="main">
+            <div id="contents">
+                <h4 class="underline">Contents</h4>
+                <div></div>
+            </div>
+
+            <main>
+<h1>STM32 UART (Universal Asynchronous Receiver-Transmitter)</h1>
+<p>I began learning UART after a 2-day debugging nightmare on a small OLED screen. I wanted to learn I2C communication by printing text to it, but not matter what, it remained blank.</p>
+<p>Eventually I solved it, but I could've saved 2 days if I knew how to just print debug statements from my STM32 to my computer.</p>
+<p>UART itself is easy enough to learn, the implementation on an STM32 is what troubled me with its countless options and ways of implementing them.</p>
+<h2>What Is UART?</h2>
+<p>UART stands for <em>Universal Asynchronous Receiver-Transmitter</em>. It's a universal way of receiving and transmitting <em>serial</em> data, <em>serial</em> meaning it's sent one bit at a time instead of at once.</p>
+<p>In short, 2 connected devices send and receive packets between each other through their own ‘transmit' and ‘receive' lines, and they do it at a pre-agreed speed.</p>
+<p>The packet itself is structured so the receiver knows when it starts, how much data there is, a bit to check if the data is corrupted, and another 1 or 2 to know that the packet is finished.</p>
+<p>2 devices are connected with 2 physical lines <strong>(device A's transmit connects to device B's receive, and device B's transmit connects to device A's receive).</strong> These lines are used to send/receive <em>packets</em> at a pre-agreed speed <em>(called baud rate).</em></p>
+<p>Packets are structured, generally like this:</p>
+<ul>
+<li>1 bit indicates the start of a packet</li>
+<li>5-9 bits <em>(configurable)</em> hold the data</li>
+<li>1 bit <em>(optional)</em> indicates if the data is corrupted via bit parity</li>
+<li>1, 1.5, or 2 bits <em>(configurable)</em> signal the end of a packet</li>
+</ul>
+<h3>Parity</h3>
+<p>This is an optional bit that the receiver can use to detect if the data it received has been corrupted in transit (e.g. if the line is noisy or there's interference).</p>
+<p>There are 2 options:</p>
+<ul>
+<li>odd parity</li>
+<li>even parity</li>
+</ul>
+<p>In either case, the amount of 1's in the data are counted and the parity bit is set based off that:</p>
+<ul>
+<li>In odd parity, if the number of 1's is even, the parity bit is 1</li>
+<li>If the number of 1's is odd, the parity bit is 0</li>
+<li>Vice-versa for even parity</li>
+</ul>
+<p>This isn't a perfect way of detecting errors - if 2 data bits are corrupted instead of 1, it will not be detected, but it's good enough for basic UART.</p>
+<p>It's also not an error <em>correction</em> mechanism, it can only <em>detect</em> them.</p>
+<h3>Stop Bits</h3>
+<p>Hold on - <strong>1.5 stop bits???</strong></p>
+<p>Yup, that's one of the first things which confused me. On certain hardware or when the 2 devices have slightly different clock speeds due to hardware limitations, the stop bit may need to be longer than 1 so the receiver can properly sync and process the byte. However, 2 stop bits reduce throughput <em>(how much useful data is transferred for the same amount of time),</em> so 1.5 stop bits is like a decent 'compromise'.</p>
+<p><strong>Althought, from further research, it seems like this should only be used for smartcard mode</strong> <em>(which isn't the standard UART protocol)</em> <strong>so I won't mention it anymore.</strong></p>
+<h2>Oversampling</h2>
+<p>When the receiver receives a packet, it doesn't just magically detect the bits - it has to <em>'sample'</em> its 'receive' line for each bit and determine what it is.</p>
+<p>There is, however, an issue with the basic method of &quot;just sample every X clock cycles that correspond to the baud rate&quot;. Imagine you're developing something that will exit in an electrically noisy environment - on the precise clock cycle at which the receiver samples the 'receive' line to read the bit, the line gets corrupted and 0 changes to 1, or 1 to 0 for a few clock cycles before going back to the correct value.</p>
+<p>With the basic method, the bit will be sampled incorrectly, which can be inacceptable based off how important the data is.</p>
+<p><strong>So, the solution is oversampling.</strong></p>
+<p>The receiver 'divides' each bit into <em>8 or 16</em> equal intervals using the baud rate. For example, if the baud rate is 9600 <em>(bits/second)</em> then each bit lasts for 104.17μs. That means <em>(for 16x oversampling)</em> each interval is 6.51μs <em>(from 104.17/16)</em>, and so the receiver samples at that interval.</p>
+<p>In short, it samples each bit 8 or 16 times based off the configuration.</p>
+<p><strong>However,</strong> not all samples are created equal.</p>
+<p>The line signal doesn't immediately change once the sender flips a bit from 0 to 1 <em>(or 1 to 0)</em>, so only samples around the middle are considered by the receiver for the final bit - more specifically only 3 samples around the middle of the bit period.</p>
+<p>The 3 samples are then voted on - the majority vote wins - and that drastically lowers the odds of line interference or jittery data being an issue <em>(but it's not a foolproof solution, which is why other methods and protocols exist if reliability is a must).</em></p>
+<h2>UART On STM32</h2>
+<p>As one of the most popular protocols in the embedded world, UART is obviously supported on STM32 development boards, such as the Nucleo-STM32's <em>(I'm using the Nucleo-STM32H7RS which is what this article is written based on)</em>.</p>
+<p>STM32 chips support up to 3* distinct types of UART peripherals for your various use cases:</p>
+<ul>
+<li><strong>UART</strong> if you want the standard UART experience</li>
+<li><strong>USART</strong> if you want synchronous and smartcard functionality on top of basic UART</li>
+<li><strong>LPUART</strong> if you want low-power usage with limited functionality</li>
+</ul>
+<p>In any case, all support the basic idea of what UART is, and they support FIFO buffers, so you can have non-blocking data transfers.</p>
+<h3>Block Diagram</h3>
+<p>This is how UART is laid out on the STM32H7RS, though a lot of this is so fundamental it'll be similar/identical on other chips.</p>
+<p>The image is below, and it tells us a lot of things already:</p>
+<ul>
+<li>you'll find the configuration registers on the APB bus</li>
+<li>there's an interrupt and DMA interface for non-blocking software design</li>
+<li>the image is nicely divided into which parts are controlled by the bus interface clock and which by the kernel clock <em>(if you're not sure what this is, read up on the RCC article)</em></li>
+<li>the <strong>TxFIFO/RxFIFO</strong> are connected to the shift registers, which are clocked by the baudrate generator <em>(baudrate generated by kernel clock)</em></li>
+<li>all of that leads to the <code>TX</code>/<code>RX</code> pins you use to talk over UART</li>
+</ul>
+<p>The <code>TX</code> pin isn't always 'there', if you aren't configuring UART with the transmitter enabled, this becomes a normal GPIO pin. If configured, the pin idles at high when no data is being transmitted. <em>There are also 2 interesting UART modes called single-wire and smartcard.</em> I won't talk about the latter in this article, but single-wire lets you <strong>transmit and receive</strong> over a <strong>single wire</strong>, and this is the pin used in those modes.</p>
+<p>The only other thing worth mentioning in terms of pure UART is the pin labelled with <code>NSS</code> - that is for UART in synchronous master-slave mode, and it's used as input for slave selection.</p>
+<p>The other pins are not so relevant as they're for other protocols that use the UART block as their base. They need separate articles.</p>
+<p><img loading="lazy" src="./assets/figure_736-uart_block_diagram.png" alt="Figure 736. USART block diagram" /></p>
+<p><em>* Not all chips include these 3. The STM32H7RS, for example, does - but typically you'd only have the first 2. LPUART is only really on chips with low-power use cases in mind, and the H7RS as that one just has everything. Writing this sentence led me to learning that ARM doesn't actually manufacture the ARM Cortex-M core, they just provide the license for manufacturing. Companies like STMicroelectronics take it and make their own version by expanding its functionality and having it manufactured. Not very useful info but at least you're prepared for semiconductor trivia night!</em></p>
+<h2>UART Characters</h2>
+<p>On the STM32, you can specify how long you want the data field of the UART package to be. You can typically choose between 7, 8, or 9 bits, which is selected in the <code>USART_CR1</code> control register.</p>
+<p>By default, Tx/Rx are both low during the start bit and high during the stop bit(s).</p>
+<p>If a period the length of a full UART package is all 1's, that's interpreted as an idle character*. If a period the length of a full UART package is all 0's, that's interpreted as an break character. From my research, it seems like these are user-defined, as in they can be detected and you can choose what to do on each of them.</p>
+<p><em>* Although they're called 'characters', they aren't the typical 8-bit ASCII character you might be thinking of. They're just a period of time equivalent to a full UART packet where the signal is all 0s or all 1s.</em></p>
+<h2>FIFO And Thresholds</h2>
+<p>By default, UART is configured to use the <code>USART_RDR</code> and <code>USART_TDR</code> registers for receiving/transmitting data 1-byte at a time.</p>
+<p>This naturally comes with <em>issues</em>, such as:</p>
+<ul>
+<li>the CPU has to handle every read/write directly, so it wastes CPU cycles that could've been used doing something more productive</li>
+<li>you can only read 1 transferred data packet at a time, with each new one overriding the old one, which leads to data loss if you aren't fast enough in servicing it</li>
+</ul>
+<p>With FIFO mode <em>(FIFO standing for &quot;First In, First Out&quot;)</em>, you can have the chip automatically sending/storing packets until it hits a threshold, in which case you are made aware through an interrupt. And you usually do use FIFO mode with interrupts <em>(unless you have a specific reason not to, such as specific timing requirements)</em>.</p>
+<p>The reason it's called <em>FIFO</em> is because it works like a queue: the first packet you receive from UART is the first one serviced when you read the data buffer, and the first packet you put in the buffer is the first one that gets sent i.e. it keeps the data in the same chronological order.</p>
+<p>FIFO mode is entered through the setting of the <code>FIFOEN</code> bit in the <code>USART_CR1</code> control register, and you can only use this mode in UART, SPI, and smartcard modes <em>(only discussing UART in this article)</em>.</p>
+<p>And since the data you can send/receive is able to be up to 9-bits wide, so the TxFIFO is 9-bits wide.</p>
+<p><em>However,</em> the RxFIFO is 12-bits wide as it needs to store 'metadata' flags:</p>
+<ul>
+<li>parity error</li>
+<li>noise error</li>
+<li>framing error</li>
+</ul>
+<p>Despite this, when you read <code>USART_RDR</code>, you only read the 9-bits of data without the flags, which can be read from <code>USART_ISR</code>.</p>
+<h3>FIFO Threshold Interrupts</h3>
+<p>As for the threshold levels, it's possible to configure both the Tx and Rx levels at which the interrupts are triggered using the <code>USART_CR3</code> control register, looking for the <code>RXFTCFG</code> and <code>TXFTCFG</code> bits.</p>
+<p>In the Rx buffer, the threshold is reached when the <code>USART_RDR</code> register and the RxFIFO hit a <strong>combined total</strong> of the threshold. Since <code>USART_RDR</code> has a capacity of 1, the threshold is hit when the RxFIFO is at <code>threshold - 1</code> amount of data stored.</p>
+<p>Additionally, the Rx flags are only set one time once the threshold is reached, NOT for every individual transfer.</p>
+<p>In the Tx buffer, the threshold is reached when the number of <em>'empty'</em> data locations is greater than the threshold value.</p>
+<h2>UART Transmitter/Receiver</h2>
+<p>You don't always want to send data over UART, sometimes you want to only read.</p>
+<p>That's why you need to enable the transmitter first if you want to send data, which is done through the <code>TE</code> bit located in the all-so-versatile <code>USART_CR1</code> control register.</p>
+<p>In the same way, you don't always want to send data, and <code>USART_CR1</code> also has a <code>RE</code> bit to enable/disable the receiver.</p>
+<h3>Transmitter TE</h3>
+<p>Disabling the transmitter through the <strong>TE</strong> bit <em>during</em> the sending of data is going to <strong>corrupt</strong> the data permanently <em>(as in, even re-enabling it later won't recover the interrupted transfer)</em>.</p>
+<p>When enabled, the TE sends an idle frame.</p>
+<h3>Transmitter Default Vs FIFO</h3>
+<p>The way data is sent is always the same:</p>
+<ul>
+<li>LSB sent first</li>
+<li>data is shifted and sent via the shift register</li>
+</ul>
+<p>When sending data <strong>without</strong> FIFO mode, the <code>USART_TDR</code> register is the only buffer between the internal bus and the shift register, which means the send needs to happen <strong>and</strong> finish before filling the register up again, otherwise you will lose data.</p>
+<p>When sending data <strong>with</strong> FIFO mode, the data you put in the <code>USART_TDR</code> register gets queued in the TxFIFO.</p>
+<p>Upon sending this data, it preceeded by a single start bit that corresponds to a logical <strong>'0'</strong> <em>(as per the UART protocol)</em>, and by a configurable number of stop bits <em>(again, as per the UART protocol)</em>.</p>
+<p><em>The RM0477 reference manual (and possibly reference manuals for your board) has an outlined sequence of how to bring up the transmission part of UART and send data.</em></p>
+<h3>Transmitter Flags</h3>
+<p>There are a few flags you get access to, summarised from the RM0477:</p>
+<div class="table-wrapper"><table><thead><tr><th align="center"><strong>Flag</strong></th><th align="left"><strong>Meaning</strong></th><th align="left"><strong>How To Clear</strong></th><th align="center"><strong>How To Enable</strong></th></tr></thead><tbody><tr><td align="center">TXE</td><td align="left">Transmit data register empty</td><td align="left">Write to TDR*</td><td align="center">TXEIE</td></tr><tr><td align="center">TXFNF</td><td align="left">Transmit FIFO not full</td><td align="left">Fill TxFIFO</td><td align="center">TXFNFIE</td></tr><tr><td align="center">TXFE</td><td align="left">Transmit FIFO empty</td><td align="left">Write to TDR or write 1 to TXFRQ</td><td align="center">TXFEIE</td></tr><tr><td align="center">TXFT</td><td align="left">Transmit FIFO threshold reached</td><td align="left">Write to TDR**</td><td align="center">TXFTIE</td></tr><tr><td align="center">CTSIF</td><td align="left">Clear-To-Send interrupt***</td><td align="left">Write 1 to CTSCF</td><td align="center">CTSIE</td></tr><tr><td align="center">TC</td><td align="left">Transmission complete</td><td align="left">Write to TDR or write 1 in TCCF</td><td align="center">TCIE</td></tr><tr><td align="center">TCBGT</td><td align="left">Only for smartcard mode</td><td align="left">n/a</td><td align="center">n/a</td></tr></tbody></table></div>
+<p><em>* In FIFO mode, TxFIFO needs to be full as well. Not a confirmed reason that I found or anything, but I believe this is because the <code>USART_TDR</code> contents get moved to the TxFIFO buffer in FIFO mode unless the TxFIFO is full, and this flag only checks if the <code>USART_TDR</code> register has contents inside it, not the TxFIFO.</em></p>
+<p><em>** Writing to TDR will only cause the flag to be cleared if the empty spots in the TxFIFO are less than the threshold. It remains set otherwise.</em></p>
+<p><em>*** See RTS/CTS section.</em></p>
+<h2>STM32 UART Registers</h2>
+<h2>Sources</h2>
+<p><a href="https://www.circuitbasics.com/basics-uart-communication/">CircuitBasics - Basics of UART Communication</a>
+<a href="https://electronics.stackexchange.com/questions/621747/uart-oversampling">StackExchange - UART oversampling</a>
+<a href="https://www.st.com/resource/en/reference_manual/rm0477-stm32h7rx7sx-armbased-32bit-mcus-stmicroelectronics.pdf">STMicroelectronics - STM32H7RS Reference Manual</a>
+<a href="https://electronics.stackexchange.com/questions/481057/how-does-the-uart-communication-detect-the-true-idle-in-this-case">StackExchange - How does the UART communication detect the true idle in this case?</a>
+<a href="https://en.wikipedia.org/wiki/Universal_asynchronous_receiver-transmitter">Wikipedia - UART</a>
+<a href="https://onlinedocs.microchip.com/oxy/GUID-04B5982F-17EC-4A6E-B7FE-72DF0A5463B9-en-US-3/GUID-171E8ED9-0E89-49BB-9694-E0405F551C70.html">Microchip - Guard Time</a></p>
+            </main>
+        </div>
+
+        <script src="../script.js"></script>
+    </body>
+</html>
