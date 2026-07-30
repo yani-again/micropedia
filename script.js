@@ -1,7 +1,7 @@
 // populate articles
 const h2_titles = document.querySelectorAll("h2");
 let contents_wrapper = document.querySelector("#contents>div");
-const MAX_CONTENTS_LEN = 20;
+const MAX_CONTENTS_LEN = 99;
 h2_titles.forEach(h2 => {
     const url = window.location.href.split('#')[0]; // .split('#')[0] to remove any left-over #<something> from the URL
     let title = h2.innerText;

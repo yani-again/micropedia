@@ -26,11 +26,12 @@ body {
 }
 
 #contents {
-    padding-right: 25px;
-    width: 680px;
+    margin-right: 25px;
+    width: 705px;
     height: fit-content;
     position: sticky;
     top: 4ch;
+    overflow-x: hidden;
 }
 #contents a {
     margin-top: 5px;
@@ -44,7 +45,7 @@ body {
     background: linear-gradient(90deg, #ffffff00 0%, #ffffff 100%);
     position: absolute;
     top: 0;
-    right: 25px;
+    right: 0;
     pointer-events: none;
 }
 
