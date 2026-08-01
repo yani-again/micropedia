@@ -28,7 +28,7 @@
             <p>More information on the <a href="https://ucpedia.com/">main page!</a></p>
         </div>
 
-        <span id="last-edited" style="display: none;">16 Jul 2026 at 21:33</span>
+        <span id="last-edited" style="display: none;">01 Aug 2026 at 23:21</span>
         <div id="main">
             <div id="contents">
                 <h4 class="underline">Contents</h4>
@@ -314,7 +314,7 @@ That register is write-protected by default. To modify it, set the <code>DBP</co
 <li>Wait for <code>LSERDY</code> to turn to 1</li>
 <li>Clear <code>DBP</code> as it's not needed for now</li>
 </ol>
-<h2>High-Speed External (HSI)</h2>
+<h2>High-Speed Internal (HSI)</h2>
 <p><em>Less accurate, high-speed.</em></p>
 <p>This is the default system clock after a reset. The benefits are that it's cheaper for the final product as it's integrated and removes the need of an external crystal, and it starts up faster than an external oscillator <em>(in microseconds)</em>. However it's less accurate than an external crystal, even when calibrated.</p>
 <p>For most regular firmware, the accuracy margin is small anyway and won't be an issue <em>(about 0.5% in either direction according to the datasheet)</em>, however the HSE is always there when accurate clocks are needed.</p>
