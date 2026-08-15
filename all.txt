@@ -6,3 +6,4 @@ STM32H7RS Reset and Clock Controller (RCC) - H7R/H7S series@/articles/stm32h7s3l
 STM32 GPIO (General Purpose I/O) Explained@/articles/stm32_gpio_explained.html
 STM32 NVIC (Nested Vectored Interrupt Controller) Explained@/articles/stm32_nvic_explained.html
 STM32 UART (Universal Asynchronous Receiver-Transmitter)@/articles/stm32_uart.html
+STM32G0 LPUART (Low-Power UART) Bare-Metal No HAL@/articles/stm32g0_lpuart.html

@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta http-equiv="X-UA-Compatible" content="ie=edge">
+        <title>STM32G0 LPUART (Low-Power UART) Bare-Metal No HAL - MicroPedia</title>
+        <link rel="stylesheet" href="../reset.css">
+        <link rel="stylesheet" href="../style.css">
+        <link rel="icon" href="../public/favicon.ico" type="image/x-icon">
+    </head>
+    <body>
+        <header>
+            <img alt="logo" src="../assets/ucpedia logo.png">
+            <form action="/search.html">
+                <input name="search" id="search" type="text" placeholder="Search articles"><!--
+                --><button id="search-button">search</button>
+            </form>
+        </header>
+
+        <div id="disclaimer" class="display-none">
+            <span class="exit" onClick="hide_disclaimer()">x</span>
+            <h3>SOME NOTES!</h3>
+            <ol>
+                <li>This website exclusively focuses on STM32 microcontrollers. If you are using something else, take this information with a grain of salt. If you are using something with a Cortex-M processor, there is still valuable information you can extract, though not every article will be applicable to a non-STM32 microcontroller.</li>
+                <li>I'm a university student and this site is my passive personal project. I collect my notes as I learn bare-metal embedded programming, then I tidy and upload them here. Being in the learning phase, there are likely a bunch of mistakes around the site. If you spot any, <a href="https://github.com/yani-again" target="_blank">please let me know!</a></li>
+            </ol>
+            <p>More information on the <a href="https://ucpedia.com/">main page!</a></p>
+        </div>
+
+        <span id="last-edited" style="display: none;">15 Aug 2026 at 19:33</span>
+        <div id="main">
+            <div id="contents">
+                <h4 class="underline">Contents</h4>
+                <div></div>
+            </div>
+
+            <main>
+<h1>STM32G0 LPUART Bare-Metal (No HAL)</h1>
+<p>Bare-metal LPUART is something I began learning when I decided to build a recovery beacon for my university rocketry team.</p>
+<p>I had 3 spare STM32G031K8 Nucleo boards and wanted to see how far I can push a small battery to allow the MCU to keep transmitting its GPS coordinates at regular intervals until we recover the rocket <em>(for the mid-2027 launch, so if you're reading after that, hopefully the launch went well!)</em></p>
+<p>Naturally, using UART's low-power alternative, <strong>LPUART</strong>, was the obvious move.</p>
+<p>At its core, both the regular UART and the LPUART peripherals implement the same protocol to achieve the same thing, the difference is their <strong>execution</strong>. That's why if you've read the UART article <em>(which was STM32H7RS-specific)</em>, you'll already know a lot of the information around <em>how</em> UART works and what the main parts of the block diagram are, so you might want to just skim them and hurry to the part about the differences.</p>
+<h2>What Is UART?</h2>
+<p>UART stands for <em>Universal Asynchronous Receiver-Transmitter</em>. It's a universal way of receiving and transmitting <em>serial</em> data, <em>serial</em> meaning it's sent one bit at a time instead of at once.</p>
+<p>In short, 2 connected devices send and receive packets between each other through their own ‘transmit' and ‘receive' lines, and they do it at a pre-agreed speed.</p>
+<p>The packet itself is structured so the receiver knows when it starts, how much data there is, a bit to check if the data is corrupted, and another 1 or 2 to know that the packet is finished.</p>
+<p>2 devices are connected with 2 physical lines <strong>(device A's transmit connects to device B's receive, and device B's transmit connects to device A's receive).</strong> These lines are used to send/receive <em>packets</em> at a pre-agreed speed <em>(called baud rate).</em></p>
+<p>Packets are structured, generally like this:</p>
+<ul>
+<li>1 bit indicates the start of a packet</li>
+<li>7-9 bits <em>(configurable)</em> hold the data</li>
+<li>1 bit <em>(optional)</em> indicates if the data is corrupted via bit parity</li>
+<li>1 or 2 bits <em>(configurable)</em> signal the end of a packet</li>
+</ul>
+<h3>Parity</h3>
+<p>This is an optional bit that the receiver can use to detect if the data it received has been corrupted in transit <em>(e.g. if the line is noisy or there's interference)</em>.</p>
+<p>There are 2 options:</p>
+<ul>
+<li>odd parity</li>
+<li>even parity</li>
+</ul>
+<p>In either case, the amount of 1's in the data are counted and the parity bit is set based off that:</p>
+<ul>
+<li>In odd parity, if the number of 1's is even, the parity bit is 1</li>
+<li>If the number of 1's is odd, the parity bit is 0</li>
+<li>Vice-versa for even parity</li>
+</ul>
+<p>This isn't a perfect way of detecting errors - if 2 data bits are corrupted instead of 1, it will not be detected, but it's good enough for basic UART.</p>
+<p>It's also not an error <em>correction</em> mechanism, it can only <em>detect</em> them.</p>
+<h4>Parity On STM32</h4>
+<p>On the STM32s, the parity bit is counted towards the total data bits. So if you've selected to have 9 data bits, and you enable the parity bit <em>(done with the</em> <strong>PCE</strong> <em>bit in the <code>LPUART_CR1</code> register)</em>, you will only have 8 bits for data; the 9th is reserved for the parity bit.</p>
+<h3>Stop &amp; Start Bits</h3>
+<p>By default, the UART data lines <em>(both the Tx and Rx line)</em> idle at a logical high <em>(AKA they idle at 1)</em>. This is why the start bit <strong>HAS</strong> to be the opposite of what the line idles at, else the start of a packet won't be reliably detectable. The stop bit is the same logical level as the idle line.</p>
+<p>So for the default configuration, the start bit is 0 and the stop bit is 1.</p>
+<p><em>Each of the Tx/Rx lines have a logical level inverter (<code>LPUART_CR2</code> register, specifically the <code>TXINV</code>/<code>RXINV</code> bits) which inverts the polarity of the whole line, this making idle &amp; start a 1, and stop a 0. All data is also inverted.</em></p>
+<h3>Oversampling On The G0</h3>
+<p>If you're interested in what oversampling is, look at the generic UART chapter - the LPUART doesn't support oversampling configurations so knowing what it is would only benefit your personal satisfaction.</p>
+<p>For the actual oversampling value, I wasn't able to find information on what the value is, <em>however, I was able to work out what it would be in theory.</em></p>
+<p>The RM0444 reference manual <em>(for the STM32G0x1 Nucleo boards)</em> shows this formula:</p>
+<pre><code>/*
+ * - lpuart_ck_pres is the clock used by the baud rate generator
+ * - LPUARTDIV is the value you write into the LPUART_BRR register
+ */
+baud rate = (256 * lpuart_ck_pres) / LPUARTDIV
+</code></pre>
+<p>The reference manual states that LPUARTDIV has a minimum value of 0x300 <em>(768 in decimal)</em>. This means that from the 32.768 KHz LSE clock, you can generate a maximum baud rate of 10,922.667. From that, you can divide the 32,768 clock speed by 10,922.667, you find that there are 3 clock cycles per baud period, which means each bit can be sampled up to 3 times.</p>
+<p>However, given how the sampling works on the H7RS <em>(again from the generic UART article)</em>, I imagine only the 2nd sample is actually counted as it falls right in the middle of the baud period.</p>
+<p>This effectivelly means the LPUART doesn't oversample, it's the same as using <code>ONEBIT</code> mode on the USART controller.</p>
+<p><strong>Now, this is all speculation, as I said I haven't found exactly how oversampling works on the G0, so take it with a grain of salt.</strong></p>
+<h2>LPUART On The STM32G0</h2>
+<p>The main benefit of using LPUART over the USART controller on the G0 family is that it is capable of running UART at a 9,600 baud rate with <em>just the LSE 32.768 KHz clock</em>, which makes it possible to function in low-power modes by using the LSE as its kernel clock.</p>
+<h3>LPUART Block Diagram</h3>
+<p><img loading="lazy" src="./assets/figure_341-lpuart_block_diagram.png" alt="Figure 341. LPUART block diagram" /></p>
+<p>The hardware breaks down as follows:</p>
+<ul>
+<li>the <code>lpuart_pclk</code> bus interface clock domain manages the register access for you to configure the LPUART</li>
+<li>the <code>lpuart_ker_ck</code> kernel clock domain manages the actual UART protocol logic and data transfer</li>
+</ul>
+<p>On the left, you see all of the registers you use to configure and control the UART protocol, including things like interrupts and DMA. On the right, you see the actual execution of the protocol.</p>
+<h2>Character &amp; Data Length</h2>
+<p>As I said in the explanation of what UART is, the LPUART controller lets you configure between sending 7, 8, and 9 bits of data per packet.</p>
+<p>The control is done with the M1 and M0 bits in the <code>LPUART_CR1</code> register, which means the <code>lpuart_pclk</code> bus interface clock must be turned on through the <code>RCC_APBENR1</code>/<code>RCC_APBSMENR1</code> register for the LPUART instance you wish to control.</p>
+<p>The stop bits are also configurable in the <code>STOP</code> bit field of the <code>LPUART_CR2</code> register, letting you select between 1 and 2 stop bits.</p>
+<p>The controller can also send 2 <em>'special'</em> characters:</p>
+<ol>
+<li><strong>Break character:</strong> all bits from the start bit to the last stop bit are 0s, followed by 2 regular stop bits</li>
+<li><strong>Idle character:</strong> all bits from the start bit to the last stop bit are 1s</li>
+</ol>
+<p>What the receiver decides to do with these bits is user-defined.</p>
+<h2>Transmitting/Receiving Data</h2>
+<p>By default, the LPUART transceiver transmits/receives 1 data frame at a time, requiring you to service it every single time to avoid delays or overruns <em>(when new data comes in before you read the old one, causing data loss)</em>.</p>
+<p>It's done through 2 registers:</p>
+<ul>
+<li><code>LPUART_TDR</code> for transferring data</li>
+<li><code>LPUART_RDR</code> for receiving data</li>
+</ul>
+<p>There are also flags <em>(<code>LPUART_ISR</code> register)</em> and interrupts associated with the flags which let you service the data on an interrupt basis instead of polling and blocking the CPU, but that's for the interrupt section.</p>
+<h2>LPUART FIFO Mode</h2>
+<p>If you want to only service data when you have a few bytes backed up instead of on every frame, the FIFO mode is <em>one of</em> the solutions.</p>
+<p>By enabling it with <code>FIFOEN</code> in the <code>LPUART_CR1</code> register, transceived data from the TDR/RDR registers is moved over to the FIFO, allowing the transmitter/receiver to service another data frame, then another, and another, until the FIFO is empty/full <em>(empty for transmissions, full for receiving)</em>.</p>
+<p>Once you set the <code>FIFOEN</code> bit, there's nothing else you need to do*:</p>
+<ul>
+<li>Writing to the TDR register pushes bytes to the TxFIFO and shift register automatically, so sending data is exactly the same</li>
+<li>Reading from the RDR register pulls bytes from the RxFIFO after the read, so receiving data is exactly the same</li>
+</ul>
+<p><em>* Unless you want interrupts.</em></p>
+<h2>LPUART Interrupts</h2>
+<p>To avoid going over each individual interrupt, which will be in the table at the bottom of this section, here's what you need to know:</p>
+<ul>
+<li>Look for the <code>xxxIE</code> bits in one of the control registers <em>(CR1/CR2/CR3)</em></li>
+<li>To enable the interrupt, set the bit</li>
+<li>To disable the interrupt, clear the bit</li>
+</ul>
+<p>Once you set the bit <em>(e.g. TXEIE)</em>, an interrupt will be generated when the corresponding flag is set in the <code>LPUART_ISR</code> register <em>(for TXEIE that's the TXE flag - when the TDR register is empty)</em>. Note that if the interrupt is disabled, the flag is still set regardless, so your ISR needs to not only check for the set flag, but also its corresponding enable bit, something like this:</p>
+<pre><code class="language-c">void LPUART_ISR(void)
+{
+    if ((LPUART-&gt;ISR &amp; LPUART_ISR_TXE) &amp;&amp; (LPUART-&gt;CR1 &amp; TXEIE))
+    {
+        // TXE flag generated interrupt
+        // ...
+</code></pre>
+<p>There is also a configurable threshold interrupt. You can set the interrupt to be generated when the TxFIFO drops below it, or the RxFIFO goes above it, that way you have time to service the data before hitting an overrun.</p>
+<h3>Transmitter Interrupts</h3>
+<div class="table-wrapper"><table><thead><tr><th align="center"><strong>Flag</strong></th><th align="left"><strong>Meaning</strong></th><th align="left"><strong>How To Clear</strong></th><th align="center"><strong>How To Enable</strong></th></tr></thead><tbody><tr><td align="center">TXE</td><td align="left">Transmit data register empty</td><td align="left">Write to TDR</td><td align="center">TXEIE</td></tr><tr><td align="center">TXFNF</td><td align="left">Transmit FIFO not full</td><td align="left">Fill TxFIFO</td><td align="center">TXFNFIE</td></tr><tr><td align="center">TXFE</td><td align="left">Transmit FIFO empty</td><td align="left">Write to TDR or write 1 to TXFRQ</td><td align="center">TXFEIE</td></tr><tr><td align="center">TXFT</td><td align="left">Transmit FIFO threshold reached</td><td align="left">Write to TDR</td><td align="center">TXFTIE</td></tr><tr><td align="center">CTSIF</td><td align="left">Clear-To-Send interrupt</td><td align="left">Write 1 to CTSCF</td><td align="center">CTSIE</td></tr><tr><td align="center">TC</td><td align="left">Transmission complete</td><td align="left">Write to TDR or write 1 in TCCF</td><td align="center">TCIE</td></tr></tbody></table></div>
+<h3>Receiver Interrupts</h3>
+<div class="table-wrapper"><table><thead><tr><th align="center"><strong>Flag</strong></th><th align="left"><strong>Meaning</strong></th><th align="left"><strong>How To Clear</strong></th><th align="center"><strong>How To Enable</strong></th></tr></thead><tbody><tr><td align="center">RXNE</td><td align="left"><code>USART\_RDR</code> not empty</td><td align="left">Read RDR or write 1 to RXFRQ</td><td align="center">RXNEIE</td></tr><tr><td align="center">RXFNE</td><td align="left">RxFIFO not empty</td><td align="left">Read RDR until RxFIFO is empty or write 1 to RXFRQ</td><td align="center">RXFNEIE</td></tr><tr><td align="center">RXFF</td><td align="left">RxFIFO full</td><td align="left">Read RDR</td><td align="center">RXFFIE</td></tr><tr><td align="center">RXFT</td><td align="left">RxFIFO threshold reached</td><td align="left">Read RDR</td><td align="center">RXFTIE</td></tr><tr><td align="center">ORE</td><td align="left">Overrun error detected</td><td align="left">Write 1 in ORECF</td><td align="center">RXNEIE/RXFNEIE</td></tr><tr><td align="center">IDLE</td><td align="left">Idle line detected</td><td align="left">Write 1 to IDLECF</td><td align="center">IDLEIE</td></tr><tr><td align="center">PE</td><td align="left">Parity error detected</td><td align="left">Write 1 to PECF</td><td align="center">PEIE</td></tr></tbody></table></div>
+<h3>'Other' Interrupts</h3>
+<div class="table-wrapper"><table><thead><tr><th align="center"><strong>Flag</strong></th><th align="left"><strong>Meaning</strong></th><th align="left"><strong>How To Clear</strong></th><th align="center"><strong>How To Enable</strong></th></tr></thead><tbody><tr><td align="center">NE</td><td align="left">Noise error</td><td align="left">Write 1 in NECF</td><td align="center">EIE</td></tr><tr><td align="center">ORE</td><td align="left">Overrun error\*</td><td align="left">Write 1 in ORECF</td><td align="center">EIE</td></tr><tr><td align="center">FE</td><td align="left">Framing  error</td><td align="left">Write 1 in FECF</td><td align="center">EIE</td></tr><tr><td align="center">CMF</td><td align="left">Character match\*\*</td><td align="left">Write 1 in CMCF</td><td align="center">CMIE</td></tr><tr><td align="center">WUF</td><td align="left">Wake-up from low-power modes</td><td align="left">Write 1 to WUC</td><td align="center">WUFIE</td></tr></tbody></table></div>
+<p><em>* The</em> <strong>OVRDIS</strong> <em>bit in the <code>USART_CR3</code> register has to be</em> <strong>set to 0</strong> <em>for this flag to work as explained.</em></p>
+<p><em>** A character match is the same as an address match, the UART block looks for incoming characters that match what's inside the</em> <strong>ADD</strong> <em>bits in the <code>USART_CR2</code> register, triggering an interrupt when detected.</em></p>
+<h2>Sources</h2>
+<p><a href="https://ucpedia.com/articles/stm32_uart.html">Micropedia - STM32 UART</a>
+<a href="https://www.st.com/resource/en/reference_manual/rm0444-stm32g0x1-advanced-armbased-32bit-mcus-stmicroelectronics.pdf">STMicroelectronics - RM0444</a></p>
+            </main>
+        </div>
+
+        <script src="../script.js"></script>
+    </body>
+</html>
