@@ -28,7 +28,7 @@
             <p>More information on the <a href="https://ucpedia.com/">main page!</a></p>
         </div>
 
-        <span id="last-edited" style="display: none;">15 Aug 2026 at 19:33</span>
+        <span id="last-edited" style="display: none;">16 Aug 2026 at 23:31</span>
         <div id="main">
             <div id="contents">
                 <h4 class="underline">Contents</h4>
@@ -75,19 +75,14 @@
 <p>So for the default configuration, the start bit is 0 and the stop bit is 1.</p>
 <p><em>Each of the Tx/Rx lines have a logical level inverter (<code>LPUART_CR2</code> register, specifically the <code>TXINV</code>/<code>RXINV</code> bits) which inverts the polarity of the whole line, this making idle &amp; start a 1, and stop a 0. All data is also inverted.</em></p>
 <h3>Oversampling On The G0</h3>
-<p>If you're interested in what oversampling is, look at the generic UART chapter - the LPUART doesn't support oversampling configurations so knowing what it is would only benefit your personal satisfaction.</p>
-<p>For the actual oversampling value, I wasn't able to find information on what the value is, <em>however, I was able to work out what it would be in theory.</em></p>
-<p>The RM0444 reference manual <em>(for the STM32G0x1 Nucleo boards)</em> shows this formula:</p>
-<pre><code>/*
- * - lpuart_ck_pres is the clock used by the baud rate generator
- * - LPUARTDIV is the value you write into the LPUART_BRR register
- */
-baud rate = (256 * lpuart_ck_pres) / LPUARTDIV
-</code></pre>
-<p>The reference manual states that LPUARTDIV has a minimum value of 0x300 <em>(768 in decimal)</em>. This means that from the 32.768 KHz LSE clock, you can generate a maximum baud rate of 10,922.667. From that, you can divide the 32,768 clock speed by 10,922.667, you find that there are 3 clock cycles per baud period, which means each bit can be sampled up to 3 times.</p>
-<p>However, given how the sampling works on the H7RS <em>(again from the generic UART article)</em>, I imagine only the 2nd sample is actually counted as it falls right in the middle of the baud period.</p>
-<p>This effectivelly means the LPUART doesn't oversample, it's the same as using <code>ONEBIT</code> mode on the USART controller.</p>
-<p><strong>Now, this is all speculation, as I said I haven't found exactly how oversampling works on the G0, so take it with a grain of salt.</strong></p>
+<p>If you're interested in what oversampling is, look at the generic UART chapter - the LPUART doesn't support oversampling configurations so knowing what it is would only benefit your personal knowledge.</p>
+<p>For the actual oversampling, <em>there isn't any.</em></p>
+<blockquote>
+<p>RM0444 outlines on page 1,084: <em>&quot;The receiver samples each incoming bit as close as possible to the middle of the bit-period. Only a single sample is taken of each of the incoming bits.&quot;</em></p>
+</blockquote>
+<p>As a result of not having oversampling, there is also a lack of noise error detection* for the transferred data.</p>
+<p>So if you are designing something that'll live in an environment where electrical noise is a real factor, UART may not be the best option even for unimportant data.</p>
+<p><em>* The <code>NE</code> (Noise Error) flag still exists in the <code>LPUART_ISR</code>, it just can't be triggered by the 'data' part of the packet. More info later on</em></p>
 <h2>LPUART On The STM32G0</h2>
 <p>The main benefit of using LPUART over the USART controller on the G0 family is that it is capable of running UART at a 9,600 baud rate with <em>just the LSE 32.768 KHz clock</em>, which makes it possible to function in low-power modes by using the LSE as its kernel clock.</p>
 <h3>LPUART Block Diagram</h3>
@@ -149,6 +144,109 @@ baud rate = (256 * lpuart_ck_pres) / LPUARTDIV
 <div class="table-wrapper"><table><thead><tr><th align="center"><strong>Flag</strong></th><th align="left"><strong>Meaning</strong></th><th align="left"><strong>How To Clear</strong></th><th align="center"><strong>How To Enable</strong></th></tr></thead><tbody><tr><td align="center">NE</td><td align="left">Noise error</td><td align="left">Write 1 in NECF</td><td align="center">EIE</td></tr><tr><td align="center">ORE</td><td align="left">Overrun error\*</td><td align="left">Write 1 in ORECF</td><td align="center">EIE</td></tr><tr><td align="center">FE</td><td align="left">Framing  error</td><td align="left">Write 1 in FECF</td><td align="center">EIE</td></tr><tr><td align="center">CMF</td><td align="left">Character match\*\*</td><td align="left">Write 1 in CMCF</td><td align="center">CMIE</td></tr><tr><td align="center">WUF</td><td align="left">Wake-up from low-power modes</td><td align="left">Write 1 to WUC</td><td align="center">WUFIE</td></tr></tbody></table></div>
 <p><em>* The</em> <strong>OVRDIS</strong> <em>bit in the <code>USART_CR3</code> register has to be</em> <strong>set to 0</strong> <em>for this flag to work as explained.</em></p>
 <p><em>** A character match is the same as an address match, the UART block looks for incoming characters that match what's inside the</em> <strong>ADD</strong> <em>bits in the <code>USART_CR2</code> register, triggering an interrupt when detected.</em></p>
+<h2>LPUART Clock Sources</h2>
+<p>Since STM32 implements its peripherals with a peripheral and kernel clock, you need to configure both for the LPUART to function fully.</p>
+<h3>Peripheral <em>(Bus Interface)</em> Clock</h3>
+<p>This is the one that starts to look like a spider web because there are just so many ways to configure it.</p>
+<p>First, you need to figure out what your system clock speed <em>(SYSCLK)</em> is going to be, and that can be selected from the following sources:</p>
+<ul>
+<li>LSE</li>
+<li>LSI</li>
+<li>HSE*</li>
+<li>PLLRCLK</li>
+<li>HSI**
+The former 3 are unassuming - you just turn them on and adjust their speed <em>(if applicable)</em>.</li>
+</ul>
+<p>The latter 2, however, have a bit more depth. The PLLRCLK is specifically referring to the output of the <strong>'R'</strong> divider on the PLL, as that's the only one of the dividers that can feed the generation of the system clock. The HSI is ran through a divider before it's muxed to act as the system clock. The divider is selected by the <code>HSIDIV</code> bits in the <code>RCC_CR</code> register.</p>
+<p>Once you have your system clock <em>(SYSCLK)</em>, there are a further 2 dividers it must run through before it touches the APB bus <em>(and therefore your LPUART)</em>:</p>
+<ol>
+<li>AHB prescaler</li>
+<li>APB prescaler</li>
+</ol>
+<p>Both of these are controlled in the <code>RCC_CFGR</code> register, by the <code>HPRE</code>/<code>PPRE</code> bits respectively.</p>
+<p>And voila! We have our <code>lpuart_pclk</code> clock :)</p>
+<p><em>* The G031K8 does NOT seem to have this on the Nucleo board by default, you need to attach/solder your own.</em></p>
+<p><em>** <code>HSI</code> refers to HSI16 for the STM32G031K8, some families of the G0 also have a HSI48, which is primarily for USB and RNG, but the chip I'm using doesn't support it. Regardless, HSI48 doesn't get involved with the system clock generation so it'd be uninteresting for this article in any case.</em></p>
+<h3>Kernel Clock</h3>
+<p>The possible LPUART kernel clock sources are the following, and can be selected by the <code>LPUARTxSEL</code> bits in the <code>RCC_CCIPR</code> register:</p>
+<ul>
+<li>PCLK <em>(same as the APB peripheral clock)</em></li>
+<li>SYSCLK <em>(same as the system clock)</em></li>
+<li>HSI</li>
+<li>LSE</li>
+</ul>
+<p>The former 2 are already covered in the peripheral clock part - PCLK is the final APB bus clock, the same one used for <code>lpuart_pclk</code>, whereas SYSCLK is the system clock before any AHB/APB prescalers get involved, also mentioned in the last subsection.</p>
+<p>The latter 2 are just the direct clock sources from the oscillators. Yes, this includes HSI - it does NOT get the value divided by HSIDIV, rather the raw HSI speed, as confirmed by CubeMX experimentation.</p>
+<p>Once you have this, it is also divided by the LPUART prescaler value, which is configurable via the <code>LPUART_PRESC</code> register.</p>
+<p>And voila! We have our <code>lpuart_ker_ck_pres</code> clock :)</p>
+<h2>Error Detection</h2>
+<h3>Framing Error</h3>
+<p>This occurs when the stop bit(s) are not correctly detected at the expected time, which will happen after a de-synchronisation or noise.</p>
+<p>Using the interrupt tables above, this corresponds to the <code>FE</code> bit.</p>
+<p>Despite the error, the data received in the shift register still goes in the <code>LPUART_RDR</code> register.</p>
+<p>It's worth noting that if you're not using multibuffer communication <em>(multiple MCUs talking to each other over the same Tx/Rx lines)</em>, this bit doesn't generate an interrupt, however since the data still goes in the RDR register, an interrupt is generated anyway by the <code>RXNE</code> bit.</p>
+<h3>Other Errors</h3>
+<p>The other errors are overrun and noise error.</p>
+<p>Overrun was covered earlier - it happens when new data comes in the receiver's shift register before you've serviced the old one, leading to the loss of the old data.</p>
+<p>Noise error was also mentioned, but the reference manual is very vague about this. Besides knowing it can't occur for the data part of a UART packet, there isn't a mention of what actually triggers it <em>(or even how, if only 1 sample is taken per baud period)</em>.</p>
+<p>I'd probably just avoid UART if noise is going to be an issue in your project anyway.</p>
+<h2>Baud Rate Generation</h2>
+<p>Firstly, for LPUART, automatic baud rate detection isn't supported like on the full implementations of the regular UART/USART peripherals.</p>
+<p>This means you need to calculate and set your baud rate manually, and you must also know what baud rate the other device(s) are communicating at beforehand.</p>
+<p>2 non-constant parts make up the calculation used by the LPUART controller to generate the baud rate:</p>
+<ol>
+<li><code>lpuart_ker_ck_pres</code></li>
+<li>LPUARTDIV</li>
+</ol>
+<p>The former is just the clock the LPUART block receives, the section on clock selection further up outlines how it's calculated.</p>
+<p>The latter is a value you decide on and write to the <code>LPUART_BRR</code> register. Its only limitation is that it must be <strong>at least</strong> 0x300 <em>(768 in decimal)</em>, but there are also practical limitations:</p>
+<ul>
+<li>if using the LSE as a kernel clock source, the max baud rate is 9,600 <em>(LPUARTDIV = 0x369)</em></li>
+<li>if using any other clock source, the clock speed must be between 3x and 4,096x the baud rate</li>
+</ul>
+<p>The formula for calculating your baud rate is:</p>
+<pre><code>baud rate = (256 * lpuart_ker_ck_pres) / LPUARTDIV
+</code></pre>
+<p>Which can also be rearranged to get your LPUARTDIV value for the <code>LPUART_BRR</code> register:</p>
+<pre><code>LPUARTDIV = (256 * lpuart_ker_ck_pres) / baud rate
+</code></pre>
+<h3>Clock Deviation</h3>
+<p>In order to avoid issues, the overall deviation of all sources has to be less than the maximum allowable LPUART deviation tolerance, which you can find in your reference manual for your specific board.</p>
+<p>To calculate your actual deviation, you need to <strong>add up</strong> the following values, all as percentages:</p>
+<ul>
+<li><strong>DTRA</strong>: deviation due to transmitter*</li>
+<li><strong>DREC</strong>: deviation due to receiver*</li>
+<li><strong>DQUANT</strong>: deviation from imperfect quantisation of receiver baud rate</li>
+<li><strong>DTCL</strong>: deviation due to transmission line</li>
+<li><strong>DWU</strong>: deviation due to sampling point moving around after a low-power wake-up <em>(see formula below)</em></li>
+</ul>
+<p>Here are the deviation tolerances for the STM32G0x1 boards:</p>
+<p><img loading="lazy" src="./assets/table_200-tolerance_of_the_lpuart_receiver.png" alt="Table 200. Tolerance of the LPUART receiver" /></p>
+<h2>Low-Power Management</h2>
+<p>This is what the LPUART was designed for, and it's standout feature.</p>
+<p>Even when the bus interface clock <em>(<code>lpuart_pclk</code>)</em> is disabled, data receiving can still occur.</p>
+<p>There are 2 cases when a wake-up request is generated to wake the MCU up from its low-power mode*:</p>
+<ol>
+<li><strong>FIFO mode off:</strong> when the <code>LPUART_RDR</code> register is full, AKA when the <code>RXNE</code> flag is set</li>
+<li><strong>FIFO mode on**:</strong> when the TxFIFO is empty <em>(<code>TXFE</code> flag)</em>, the RxFIFO is full <em>(<code>RXFF</code> flag)</em>, or the RxFIFO is not empty <em>(<code>RXFNE</code> flag)</em></li>
+</ol>
+<p>Alternatively, there is something called <code>WUS</code> which is a 2-bit field in the <code>LPUART_CR3</code> register. Selecting a value from there and enabling the <code>WUFIE</code> bit in the same register will allow you to instead select one of these as a wake-up source:</p>
+<ol>
+<li>address match <em>(explained in the generic UART article, I haven't copy-pasted it here yet)</em></li>
+<li>start bit detection</li>
+<li><code>RXNE</code> <em>(which you can already do anyway using the <code>RXNEIE</code> method, though this will work even with FIFO on)</em></li>
+</ol>
+<p><em>* All relevant <code>IE</code> bits must be set prior to entering low-power mode, as well as the <code>UESM</code> bit in <code>LPUART_CR1</code> for the wake-up request to work as expected.</em></p>
+<p><em>** You can also use this with the FIFO thresholds (<code>TXFT</code>/<code>RXFT</code>) if you want more time to service the data and avoid overruns.</em></p>
+<h2>Low-Power Notes</h2>
+<ul>
+<li>Make sure you don't enter low-power modes with a transaction that's ongoing. Note that the <code>BUSY</code> flag in the <code>LPUART_ISR</code> register is <strong>NOT</strong> enough to determine this. Your best bet is probably hardware flow control, but that's a subset of UART I haven't documented properly yet, as it's technically under a different protocol name anyway</li>
+<li>The <code>WUF</code> flag from the <code>WUS</code> source is set even when <strong>NOT</strong> in low-power mode</li>
+<li>If entering low-power modes right after initialising the LPUART, wait for the receiver to actually be on via the <code>REACK</code> bit in <code>LPUART_ISR</code> <em>(note it does NOT have an interrupt associated with it)</em></li>
+</ul>
+<h2>Final Thoughts</h2>
+<p>This is honestly very similar to the regular UART, but it does fall under a separate controller with different capabilities compared to the full USART controller implementation on the STM32, so it was worth an article.</p>
+<p>I'm going to go and write some LPUART drivers for my STM32G0 now...</p>
 <h2>Sources</h2>
 <p><a href="https://ucpedia.com/articles/stm32_uart.html">Micropedia - STM32 UART</a>
 <a href="https://www.st.com/resource/en/reference_manual/rm0444-stm32g0x1-advanced-armbased-32bit-mcus-stmicroelectronics.pdf">STMicroelectronics - RM0444</a></p>
