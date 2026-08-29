@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta http-equiv="X-UA-Compatible" content="ie=edge">
+        <title>u-blox MAX-M10S Register-Level Usage Guide - MicroPedia</title>
+        <link rel="stylesheet" href="../reset.css">
+        <link rel="stylesheet" href="../style.css">
+        <link rel="icon" href="../public/favicon.ico" type="image/x-icon">
+    </head>
+    <body>
+        <header>
+            <img alt="logo" src="../assets/ucpedia logo.png">
+            <form action="/search.html">
+                <input name="search" id="search" type="text" placeholder="Search articles"><!--
+                --><button id="search-button">search</button>
+            </form>
+        </header>
+
+        <div id="disclaimer" class="display-none">
+            <span class="exit" onClick="hide_disclaimer()">x</span>
+            <h3>SOME NOTES!</h3>
+            <ol>
+                <li>This website exclusively focuses on STM32 microcontrollers. If you are using something else, take this information with a grain of salt. If you are using something with a Cortex-M processor, there is still valuable information you can extract, though not every article will be applicable to a non-STM32 microcontroller.</li>
+                <li>I'm a university student and this site is my passive personal project. I collect my notes as I learn bare-metal embedded programming, then I tidy and upload them here. Being in the learning phase, there are likely a bunch of mistakes around the site. If you spot any, <a href="https://github.com/yani-again" target="_blank">please let me know!</a></li>
+            </ol>
+            <p>More information on the <a href="https://ucpedia.com/">main page!</a></p>
+        </div>
+
+        <span id="last-edited" style="display: none;">29 Aug 2026 at 14:24</span>
+        <div id="main">
+            <div id="contents">
+                <h4 class="underline">Contents</h4>
+                <div></div>
+            </div>
+
+            <main>
+<h1>u-blox MAX-M10S And The UBX Protocol</h1>
+<p>As part of my university's rocketry team, I have been working on a system to find and transmit our rocket's location after it lands. The GNSS module I went with was the <strong>u-blox MAX-M10S</strong> from Pi Hut, hence this article.</p>
+<p>This is also the first article on Micropedia that is <strong>NOT</strong> about an STM32 microcontroller and is instead about an external peripheral module, marking a new milestone in the website's journey!</p>
+<h2>Foreword</h2>
+<p>If you're here, you probably bought one of these GNSS <em>(Global Navigation Satellite System)</em> receivers. Thus, you probably know what a GNSS module is - it gets its location through communication with satellites alongside some maths, exactly like your phone does when you open Google Maps!</p>
+<p>I won't go into the technical details of how GNSS works, there are plenty of good beginners guides on YouTube and the broader internet, here I am focusing specifically on <strong>how to set up and configure the u-blox MAX-M10S</strong> at the register-level, by sending <code>VALSET</code>/<code>VALGET</code>/<code>VALDEL</code> messages via the UBX protocol, as outlined in the datasheets.</p>
+<h2>What Is UBX?</h2>
+<p>UBX is a proprietary messaging protocol for ublox devices. It's the alternative to NMEA, which is more <em>'standard'</em> since it's a standard protocol that's intended to be able to work on any GNSS device.</p>
+<p>Although NMEA is better if you value code portability, UBX is more lightweight and gets parsed faster, which is what I was looking for in my project before deciding to write this article.</p>
+<p><em>I will write an NMEA article as well, have a look as it may be out by now.</em></p>
+<h2>Message Naming</h2>
+<p>You'll frequenly see strings that look like mumbo-jumbo throughout this article - they're actually the message naming conventions set by u-blox.</p>
+<p>They look like this: <code>&lt;protocol name&gt;-&lt;class name&gt;-&lt;message name&gt;</code>, for example <code>UBX-NAV-PVT</code>.</p>
+<p>These messages can also be separated by specific fields found inside them <em>(like microcontroller registers, such as the STM32's UART CR1 register having the field <code>UE</code> inside it)</em>, and you will see that with a dot <em>(.)</em> placed between the message and field, such as <code>UBX-MON-VER.swVersion</code>.</p>
+<p>There is also a final message standard which uses <em>message versions</em>. It's a way of denoting between two types of the same message <em>(at least how I understood it so far)</em>. E.g. you have the <code>UBX-MGA-GPS</code> message which can be represented in two different ways, each having its own message:</p>
+<ol>
+<li><code>UBX-MGA-GPS-EPH</code></li>
+<li><code>UBX-MGA-GPS-ALM</code></li>
+</ol>
+<h3>Configuration Messages</h3>
+<p>Configuration messages have a specific format: <code>CFG-&lt;group&gt;-&lt;item&gt;</code>, such as this message: <code>CFG-NAVSPG-DYNMODEL</code>.</p>
+<p>Hopefully you will no longer worry about how to interpret these weird-looking strings and instead understand what they are!</p>
+<h2>Satellite Fields</h2>
+<p>Many UBX messages have information on specific satellites.</p>
+<p>The relevant fields are:</p>
+<ul>
+<li><code>gnssId</code> contains the ID of which GNSS the satellite belongs to.</li>
+<li><code>svId</code> contains the number of the satellite in its GNSS system <em>(SV stands for Space Vehicle)</em>.</li>
+</ul>
+<p>GLONASS satellites can be tracked before they're identified. In that case, their <code>svId</code> is reported as 255.</p>
+<p>In the case multiple messages arrive from the same satellite a separate field is used:</p>
+<ul>
+<li><code>sigId</code> identifies the unique signal in the case multiple different signals are received from one satellite. <em>Note it's only valid if paired with a <code>gnssId</code>.</em></li>
+</ul>
+<p>Here are the satellite numbers, only the 3rd column from the right includes useful id fields, the rightmost column seems to be for the NMEA protocol from what I understood:</p>
+<p>The <a href="https://content.u-blox.com/sites/default/files/u-blox-M10-SPG-5.10_InterfaceDescription_UBX-21035062.pdf">ublox interface descriptor document</a> contains tables with satellite identifiers and their respective <code>gnssId</code>/<code>svId</code> fields, <em>the document has a few different tables for it and one even splits across 2 pages, so adding screenshots was awkward.</em></p>
+<p><strong>Look out for table 2 in the document as that's the UBX one specifically.</strong></p>
+<h3>More On <code>sigId</code></h3>
+<p>As mentioned above, <code>sigId</code> is a field which identifies the specific signal is being referenced from the same satellite.</p>
+<p>Again, the ublox interface descriptor document has a table containing the meaning of each <code>gnssId</code>/<code>sigId</code> combination - it's in table 4.</p>
+<h2>Message Types</h2>
+<p>There are 11 message types outlined by ublox, and I find most of them to be rather self-explanatory. Here they are regardless, with a short summary:</p>
+<ul>
+<li><strong>input:</strong> only ever input into the receiver and never output</li>
+<li><strong>output:</strong> only ever output from the receiver <em>at no set interval</em></li>
+<li><strong>input/output:</strong> previous two combined</li>
+<li><strong>periodic:</strong> output at regular intervals</li>
+<li><strong>periodic/polled:</strong> output at regular intervals, <em>can be polled</em></li>
+<li><strong>command:</strong> commands to the receiver, input-only</li>
+<li><strong>get:</strong> gets receiver configuration info</li>
+<li><strong>set:</strong> sets receiver configuration</li>
+<li><strong>get/set:</strong> previous two combined</li>
+<li><strong>polled:</strong> non-periodic, poll-only messages</li>
+<li><strong>poll request:</strong> poll request</li>
+</ul>
+<h2>UBX Protocol</h2>
+<p>Time for the meat of the article.</p>
+<p>The UBX protocol is a proprietary protocol designed by ublox, and any ublox receiver can communicate through it.</p>
+<p>The 2 main benefits are that it's compact, making use of every bit transferred and thus being efficient, and it's also checksum protected, meaning errors are less likely to slip through.</p>
+<p><em>Side note - the checksum is also a low overhead, it's only O(n) complexity so it scales well with longer packets.</em></p>
+<h2>UBX Packet Layout</h2>
+<p>Here's the structure of a basic UBX packet:</p>
+<div class="table-wrapper"><table><thead><tr><th align="center">0xB5</th><th align="center">0x62</th><th align="center">Class</th><th align="center">ID</th><th align="center">Length</th><th align="center">Payload</th><th align="center">CK&#95;A</th><th align="center">CK&#95;B</th></tr></thead><tbody><tr><td align="center">1 byte</td><td align="center">1 byte</td><td align="center">1 byte</td><td align="center">1 byte</td><td align="center">2 bytes</td><td align="center">N bytes</td><td align="center">1 byte</td><td align="center">1 byte</td></tr></tbody></table></div>
+<h3>Preamble</h3>
+<p>Every packet starts with the exact same 2-byte preamble: <code>0xB5 0x62</code>.</p>
+<p>Generally, the preamble's purpose is to synchronise the controllers and signal the start of a packet. However, in the case of ublox controllers, since they can communicate with both UBX and NMEA protocols, the preamble also serves to identify that the incoming data is a UBX packet.</p>
+<h3>Class</h3>
+<p>UBX messages are modular - they have a:</p>
+<ul>
+<li><strong>Class ID</strong> to identify the general message class</li>
+<li><strong>Message ID</strong> to identify the specific message within the class</li>
+</ul>
+<p>This 1-byte field specifies the class.</p>
+<h3>ID</h3>
+<p>1-byte field that specifies that message ID of the packet.</p>
+<h3>Length</h3>
+<p>This is the length <strong>IN BYTES</strong> of the impending payload section.</p>
+<p>Since the payload doesn't have a fixed length <em>(labelled 'N' on the table above)</em>, this is how the receiver knows the length of the data.</p>
+<h3>Payload</h3>
+<p>This is the actual data. Note it must be equal in length to the value specified by the <em>Length</em> field.</p>
+<h3>CK_A / CK_B</h3>
+<p>These are the 2 bytes for the aforementioned checksum.</p>
+<p>Check the dedicated checksum section - it's short but exists for the sake of indexing it on the contents tab of the article.</p>
+<h2>Data Types</h2>
+<p>The UBX protocol defines several data types and uses symbols to denote them throughout documentation. Here they are:</p>
+<ul>
+<li><strong>U1/U2/U4:</strong> unsigned 8/16/32-bit integer</li>
+<li><strong>I1/I2/I4:</strong> signed 8/16/32-bit integer, two's complement</li>
+<li><strong>X1:</strong> 8-bit field</li>
+<li><strong>X2/X4:</strong> 16/32-bit field, little-endian</li>
+<li><strong>R4/R8:</strong> IEEE 754 single/double precision floating-point value</li>
+<li><strong>CH:</strong> ASCII character</li>
+<li><strong>Un:</strong> unsigned bitfield value, n-bits wide</li>
+<li><strong>In:</strong> signed bitfield value, n-bits wide, two's complement</li>
+<li><strong>Sn:</strong> signed bitfield value, n-bits wide, MSB is the sign, the other bits are the magnitude</li>
+</ul>
+<h2>Miscellaneous</h2>
+<p>Here are some final, rapid-fire things from the datasheet which don't need their own section but are probably worth mentioning.</p>
+<h3>Units</h3>
+<p>Where needed, units are defined.</p>
+<p>If possible, standard units are used <em>(e.g. 'm' for meters, 's' for seconds)</em>, and time is represented through years, months, days, hours, days, minutes, and seconds.</p>
+<h3>Scales</h3>
+<p>Sometimes you need to represent one unit as another.</p>
+<p><em>In that case, a scale is used.</em></p>
+<p>When the scale is 1, there is no scale applied. Otherwise, using an example, if meters are expressed as centimeters, the scale is 0.01.</p>
+<h3>Repeated Fields</h3>
+<p>Some message types have repetition as part of their structure.</p>
+<p>There are 2 types of repetition:</p>
+<ol>
+<li>One field repeated a certain number of times</li>
+<li>A group of fields is repeated a certain number of times</li>
+</ol>
+<p>The former shows the data type and the repetition count in <em>square braces</em>.</p>
+<p>For example, U1[5] means <em>&quot;unsigned 1-byte integer array of size 5&quot;</em>.</p>
+<p>The latter has 4 sub-types of repetition:</p>
+<ol>
+<li><strong>Variable-by-field:</strong> a group is repeated an amount of times specified by an earlier field</li>
+<li><strong>Constant group:</strong> a group is repeated a constant amount of times, predefined by the message definition</li>
+<li><strong>Optional group:</strong> a group repeated 0 or 1 times, included when the payload is large enough to contain it, and its presence is inferred by the message length</li>
+<li><strong>Variable-by-size:</strong> a group is repeated as many times as the remainder of the max payload size allows</li>
+</ol>
+<h2>Checksum</h2>
+<p>As mentioned earlier, this is a 2-byte field on every UBX packet.</p>
+<p>The checksum is calculated using the following parts of the packet as input:</p>
+<ol>
+<li>Class</li>
+<li>ID</li>
+<li>Length</li>
+<li>Payload</li>
+</ol>
+<p>The formula for calculating these is actually the same as what the TCP protocol uses - that's the internet protocol your device has used countless times just by navigating to this page alone!</p>
+<pre><code class="language-c">uint8_t CK_A = 0;
+uint8_t CK_B = 0;
+
+for (uint8_t i = 0; i &lt; N; i++)
+{
+    CK_A = CK_A + buffer[i]
+    CK_B = CK_B + CK_A
+}
+</code></pre>
+<p><em>Index:</em>
+<em>- CK_A and CK_B: checksum values</em>
+<em>- buffer: data over which the checksum is calculated</em>
+<em>- N: length of buffer</em></p>
+<h2>'Outlier' Messages</h2>
+<h3>Acknowledgement</h3>
+<p>There are 2 message types related to this: <code>UBX-ACK-ACK</code> and <code>UBX-ACK-NAK</code>.</p>
+<p>When configuration messages are sent to the receiver, it'll reply with one of the two to confirm if the config has been set or not.</p>
+<p><em>Some messages from other classes also use this ACK/NAK mechanism. They are defined in the message explanations.</em></p>
+<h3>Polling</h3>
+<p>Sometimes you want to get info from the receiver.</p>
+<p>In that case, you send the required message <em>(the one you want to poll for)</em> to the receiver, however with an <strong>empty payload.</strong></p>
+<p>The receiver returns the same message but with a populated payload containing the data you need.</p>
+<h2>Available Messages</h2>
+<p>This is fully defined in the <a href="https://content.u-blox.com/sites/default/files/u-blox-M10-SPG-5.10_InterfaceDescription_UBX-21035062.pdf">&quot;u-blox M10 SPG 5.10 - Interface Description&quot;</a> document.</p>
+<p>There are too many messages to outline here, and most of it would be copy-pasting an already good resources.</p>
+<p>To see all messages you can use, look at <em>section 3.8 - UBX message overview</em>.</p>
+<h2>Sources</h2>
+<p><a href="https://content.u-blox.com/sites/default/files/MAX-M10S_IntegrationManual_UBX-20053088.pdf">ublox MAX-M10S - Integration Manual</a>
+<a href="https://content.u-blox.com/sites/default/files/u-blox-M10-SPG-5.10_InterfaceDescription_UBX-21035062.pdf">u-blox M10 SPG 5.10 - Interface Description</a></p>
+            </main>
+        </div>
+
+        <script src="../script.js"></script>
+    </body>
+</html>
