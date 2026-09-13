@@ -8,3 +8,4 @@ STM32 NVIC (Nested Vectored Interrupt Controller) Explained@/articles/stm32_nvic
 STM32 UART (Universal Asynchronous Receiver-Transmitter)@/articles/stm32_uart.html
 STM32G0 LPUART (Low-Power UART) Bare-Metal No HAL@/articles/stm32g0_lpuart.html
 u-blox MAX-M10S Register-Level Usage Guide@/articles/ublox-max-m10s.html
+Building A Recovery Beacon For Model Rockets (Using LoRa)@/articles/model_rocket_recovery_beacon.html

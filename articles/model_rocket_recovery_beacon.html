@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta http-equiv="X-UA-Compatible" content="ie=edge">
+        <title>Building A Recovery Beacon For Model Rockets (Using LoRa) - MicroPedia</title>
+        <link rel="stylesheet" href="../reset.css">
+        <link rel="stylesheet" href="../style.css">
+        <link rel="icon" href="../public/favicon.ico" type="image/x-icon">
+    </head>
+    <body>
+        <header>
+            <img alt="logo" src="../assets/ucpedia logo.png">
+            <form action="/search.html">
+                <input name="search" id="search" type="text" placeholder="Search articles"><!--
+                --><button id="search-button">search</button>
+            </form>
+        </header>
+
+        <div id="disclaimer" class="display-none">
+            <span class="exit" onClick="hide_disclaimer()">x</span>
+            <h3>SOME NOTES!</h3>
+            <ol>
+                <li>This website exclusively focuses on STM32 microcontrollers. If you are using something else, take this information with a grain of salt. If you are using something with a Cortex-M processor, there is still valuable information you can extract, though not every article will be applicable to a non-STM32 microcontroller.</li>
+                <li>I'm a university student and this site is my passive personal project. I collect my notes as I learn bare-metal embedded programming, then I tidy and upload them here. Being in the learning phase, there are likely a bunch of mistakes around the site. If you spot any, <a href="https://github.com/yani-again" target="_blank">please let me know!</a></li>
+            </ol>
+            <p>More information on the <a href="https://ucpedia.com/">main page!</a></p>
+        </div>
+
+        <span id="last-edited" style="display: none;">13 Sep 2026 at 15:23</span>
+        <div id="main">
+            <div id="contents">
+                <h4 class="underline">Contents</h4>
+                <div></div>
+            </div>
+
+            <main>
+<h1>Building A Recovery Beacon For Model Rockets (Using LoRa)</h1>
+<p>My university has a rocketry team which builds and launches a model rocket once a year for a competition. One of the aspects judges judge is the <strong>recovery</strong> - we need a way to <strong>reliably</strong> locate the rocket after it finishes flying and returns to the ground. <em>Obviously it's also important so we can recover the rocket and not leave it polluting the environment...</em></p>
+<p>The following is a story about how I built one for the team, and some of the mistakes I made so you can avoid them.</p>
+<h2>The Requirements</h2>
+<p>In order to figure out which modules I needed to buy, I first needed to have some specific requirements defined.</p>
+<p>I kept them quite basic, at least for this first version.</p>
+<p>Since this is a recovery system and needs to beacon out its location in <strong>ANY</strong> case, it can not simply rely on the main computer and power supply on the rocket - I decided it needs to be its own, separate subsystem.</p>
+<p>This meant it needed to be separately-powered through its own battery.</p>
+<p><strong>The first requirement was being battery-powered.</strong></p>
+<p>And introducing a battery meant also introducing power efficiency, which meant picking out modules that won't suck all of the battery charge up immediately, and designing the software accordingly.</p>
+<p><strong>So, the second requirement was being power-efficient in both the hardware and software departments</strong> <em>- exact power consumption figures are to be determined as I'm still learning about the electronics side of things.</em></p>
+<p>Since this is also ending up inside a fairly narrow rocket, its footprint was to also remain as small as possible, including the antennas.</p>
+<p><strong>And thus the third requirement became to fit in a space no bigger in diameter than (roughly) 15cm.</strong></p>
+<p>Finally, because the rocket may end up multiple kilometers away from us, a long-range wireless solution is needed for transmitting the data to our receiver, letting us locate the rocket.</p>
+<p>Factoring in the low-power requirement, <strong>LoRa communications is almost undoubtably the go-to solution for this project.</strong></p>
+<p>There are also additional things I considered which would introduce more functionality - primarily launch detection so the beacon isn't on <em>during</em> pre-launch/flight as that's a bit pointless - however they will be left for V2.0 of the system.</p>
+<h2>The Modules</h2>
+<p>With the minimal requirements in hand, I set out to find modules that will match.</p>
+<h3>MCU</h3>
+<p>The 'brain' of the entire operation, AKA the microcontroller, needed to be extremely minimal as its purpose is to do 2 things: get the location and transmit the location. It also needed to be able to exist in a ultra-low-power state as it would only be getting/sending the location every few seconds, not constantly <em>(remember, there was a power-efficiency requirement)</em>.</p>
+<p>I decided to go with the STM32 family of boards since it's one I worked with in the past, and it allows the user great control over every aspect of the board, unlike something such as an Arduino.</p>
+<p>More specifically, I chose the Nucleo-STM32G031K8 as the G0 family is designed for power-efficiency and uses the Cortex-M0+ CPU by ARM, which has tons of documentation online and is a very reliable and safe choice.</p>
+<p>Compared to the other STM32 boards which also use a Cortex-M0+, I chose this specific one as it's relatively modern, so it introduces lots of improvements everywhere, and it's not so focused on low-power applications to the point of feeling like you're fighting the board for functionality. <strong>Plus, the Nucleo boards by STMicroelectronics have a built-in debugger, making debugging step-by-step very easy.</strong></p>
+<h3>Location Module</h3>
+<p>Global positioning is the one part of this project I had absolutely zero experience with prior to this project.</p>
+<p>Before I tell you about the module I chose, let me explain something I learned: <strong>GPS</strong> is not a term to describe the mechanism behind getting your location on Earth. <strong>GNSS</strong> is that term.</p>
+<p><strong>GNSS</strong> is a collection of satellites from various regions <em>(currently the publicly available ones are USA, Europe, China, Russia, and Japan)</em> that send signals which can be picked up by a receiver module and processed to determine where you are located. <strong>GPS</strong> is a subset of GNSS - in particular it's the satellites provided by the USA, and each region has their own satellite names:</p>
+<ul>
+<li>GPS for USA</li>
+<li>Galileo for Europe</li>
+<li>BeiDou for China</li>
+<li>GLONASS for Russia</li>
+<li>QZSS for Japan</li>
+</ul>
+<p>With that knowledge, we now know I needed to buy a <strong>GNSS module</strong> instead of a GPS module.</p>
+<p>After some research involving the words 'GNSS' and 'low-power', I found many products to mention the brand <strong>'uBLOX'</strong>. uBLOX turned out to be one of the leading manufacturers of positioning technologies, which was very attractive for this project as 'leading' often means <em>'good documentation'</em>.</p>
+<p>More specifically, after searching for <em>'ublox low-power'</em>, one specific family of their products stood out: <strong>the M10</strong>.</p>
+<p>Now, uBLOX is a manufacturer of the actual positioning chips and not the finished, usable dev boards, which meant I had to find a breakout board that was ready for serial communication <em>(UART/SPI/I2C)</em>, not because I don't want to build my own PCB but because I do not yet have the experience. I expect a custom PCB to not be involved until the 2nd or 3rd version of the beacon.</p>
+<p>I settled for a <a href="https://thepihut.com/products/ublox-max-m8q-breakout-for-active-antennas">3V breakout board using the uBLOX Max-M10S which I found on Pi Hut.</a></p>
+<p>If you click the link, you'll notice this says it's a module for <strong>active antennas</strong>. An active antenna is one that has an LNA <em>(Low Noise Amplifier)</em> to amplify weak satellite signals. That's obviously a good thing when you consider we will be launching the rocket in a remote part of Scotland where satellite signals may be weak, and the tradeoff is that an active antenna needs to be powered. Sacrificing this extra battery power for a stronger signal, especially as we're judged on our ability to reliably recover the rocket, is worth the few tens of milliamps that the antenna consumes while it's running.</p>
+<h3>LoRa Module</h3>
+<p>There isn't much you can do wrong here, particularly because LoRa is already a low-power communication mechanism, so after Googling around for low-power breakout boards, I found a company called Ebyte.</p>
+<p>It's a Chinese manufacturer for wireless communication solutions, and they offer a family of LoRa transmitters called the <strong>E220</strong>.</p>
+<p>The E220 is built for compact sizes and low standby power consumption, which is what the requirements mentioned. The only thing worth noting here is that the <strong>E32</strong> family offers higher reliability, which we may switch to if we determine it's needed during testing.</p>
+<p>Specifically, I chose the <strong>Ebyte E220-900T22D</strong> module as it also supports over-the-air wakeup in case that's a feature I want to experiment with.</p>
+<p>Additionally, it supports the LoRa frequency channels legally permitted for use by the UK.</p>
+<h3>Antennas</h3>
+<p>As of writing, I just picked out a cheap GNSS antenna from Amazon for testing. The LoRa module came with an antenna already.</p>
+<p>I will update this section as I learn more about antennas and figure out if the ones I have will actually suffice.</p>
+<h2>Software Requirements</h2>
+<p>Besides polling and transmitting the coordinates of the rocket <em>(obviously...)</em>, the location beacon would also need to ensure it uses as little power as possible.</p>
+<p>This means only polling and transmitting the coordinates <strong>occasionally</strong>, currently that means once every 300 seconds <em>(5 minutes)</em> - V2.0 of the project will make use of the Ebyte LoRa module's wake-up functionality when it detects a specific LoRa string at a specific frequency, but V1.0 is supposed to keep things simple.</p>
+<p>And since all components only need to do work once every 300 seconds for now, the MCU can exist in an ultra-low-power state and the GNSS/LoRa modules can be powered off* until the MCU wakes up and decides it needs to interact with them.</p>
+<p>The STM32G031K8 I will use has various power modes you can read about in its reference manual, the power mode I will leave it in during this idle phase is most likely <strong>SHUTDOWN mode</strong> as it reduces the power consumption the most <em>(down to a few hundred NANOamps when the RTC is enabled to wake the MCU up at regular intervals)</em>.</p>
+<p>In fact, shutdown mode is so efficient that a coin cell battery will die of old age before it gets fully discharged by the solo MCU running in this mode... 10 times over!</p>
+<p>I could also consider using <strong>STANDBY mode</strong> as it allows the RAM contents to be retained unlike shutdown mode. This will need to be confirmed in testing after I find out the average power consumption of each method, as this approach means RAM doesn't need to be initialised on every wakeup at the cost of higher idle power consumption.</p>
+<p><em>* The uBLOX GNSS module would ideally NOT be powered off fully, instead it would be left to idle with power only being supplied to its battery pin and not VDD - this ensures when it wakes up it can get a location fix within ~2 seconds instead of needing to get an 'initial' fix every time, which can take up to 30 seconds. Yes this will consume some idle power, but the documentation states it's only 32 MICROamps, meaning it can sit idly for months even on a CR2032 coin cell battery - note we plan on recovering the rocket within hours, not months.</em></p>
+<h2>Sources</h2>
+<p><a href="https://www.u-blox.com/en">uBLOX - Home</a>
+<a href="https://www.u-blox.com/en/u-blox-m10-ultra-low-power-platform">uBLOX - M10</a>
+<a href="https://www.mouser.com/pdfDocs/MAX-M10S_DataSheet_UBX-20035208.pdf">uBLOX - MAX-M10S Data Sheet</a>
+<a href="https://vonikoshop.com/blogs/blog/how-long-does-a-lithium-coin-cell-battery-last-complete-guide">Voniko - How Long Does a Lithium Coin Cell Battery Last?</a></p>
+            </main>
+        </div>
+
+        <script src="../script.js"></script>
+    </body>
+</html>
