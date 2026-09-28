@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta http-equiv="X-UA-Compatible" content="ie=edge">
+        <title>NMEA 0183 Protocol For uBLOX Modules - MicroPedia</title>
+        <link rel="stylesheet" href="../reset.css">
+        <link rel="stylesheet" href="../style.css">
+        <link rel="icon" href="../public/favicon.ico" type="image/x-icon">
+    </head>
+    <body>
+        <header>
+            <img alt="logo" src="../assets/ucpedia logo.png">
+            <form action="/search.html">
+                <input name="search" id="search" type="text" placeholder="Search articles"><!--
+                --><button id="search-button">search</button>
+            </form>
+        </header>
+
+        <div id="disclaimer" class="display-none">
+            <span class="exit" onClick="hide_disclaimer()">x</span>
+            <h3>SOME NOTES!</h3>
+            <ol>
+                <li>This website exclusively focuses on STM32 microcontrollers. If you are using something else, take this information with a grain of salt. If you are using something with a Cortex-M processor, there is still valuable information you can extract, though not every article will be applicable to a non-STM32 microcontroller.</li>
+                <li>I'm a university student and this site is my passive personal project. I collect my notes as I learn bare-metal embedded programming, then I tidy and upload them here. Being in the learning phase, there are likely a bunch of mistakes around the site. If you spot any, <a href="https://github.com/yani-again" target="_blank">please let me know!</a></li>
+            </ol>
+            <p>More information on the <a href="https://ucpedia.com/">main page!</a></p>
+        </div>
+
+        <span id="last-edited" style="display: none;">28 Sep 2026 at 20:20</span>
+        <div id="main">
+            <div id="contents">
+                <h4 class="underline">Contents</h4>
+                <div></div>
+            </div>
+
+            <main>
+<h1>NMEA 0183 Protocol For uBLOX Modules</h1>
+<p>In 1983, the National Marine Electronics Association created a data transmission protocol that made it easy for different manufacturers of electrical equipment to ensure compatibility during data transfers, and it was created for the US maritime sector.</p>
+<p>Today, people like me use it for their personal projects!</p>
+<p>This will be a short article and focused on usage of the NMEA 0183 standard specifically in uBLOX GNSS modules, so strap in!</p>
+<p><em>There is a newer protocol - NMEA 2000 - made in 2001, which is an improvement on 0183 and serves it purpose more robustly, but 0183 is still widely used today and works perfectly fine for things like basic GNSS/GPS modules (and way more), so it's worth learning for that sake.</em></p>
+<h2>NMEA Messages</h2>
+<p>Here's an example of different messages <em>(called 'sentences')</em> you'd see from a GNSS/GPS module that uses the NMEA protocol:</p>
+<pre><code>$GPGGA, 161229.487, 3723.2475, N, 12158.3416, W, 1, 07, 1.0, 9.0, M, , , , 0000*18
+$GPGLL, 3723.2475, N, 12158.3416, W, 161229.487, A, A*41
+$GPVTG, 309.62, T, , M, 0.13, N, 0.2, K, A*23
+</code></pre>
+<p>You'll really quickly start to notice the pattern - they all begin with a dollar <strong>$</strong> sign, have some gibberish-looking letters that start with <em>'GP'</em>, and then there are a bunch of values separated by commas.</p>
+<p>Unlike a lot of things in the embedded systems world, this <strong>really</strong> is that simple!</p>
+<h2>NMEA Overview</h2>
+<p>NMEA messages are structured as follows:</p>
+<div class="table-wrapper"><table><thead><tr><th align="center">$</th><th align="center">ID</th><th align="center">Sentence Type</th><th align="center">Data</th><th align="center">&ast;/th><th align="center">Checksum</th><th align="center">Terminator</th></tr></thead></table></div>
+<ul>
+<li><strong>$:</strong> the literal dollar symbol is used as a delimiter to signal the start of every new message</li>
+<li><strong>ID:</strong> talker ID made of 2 characters, signals which satellite constellation produced the sentence <em>(see options below)</em></li>
+<li><strong>Sentence Type:</strong> 3-character ID to signal what kind of data is incoming <em>(see its dedicated section)</em></li>
+<li><strong>Data:</strong> comma-separated fields of data</li>
+<li><strong>*:</strong> checksum delimiter, signals beginning of checksum field</li>
+<li><strong>Checksum:</strong> 2-character hex checksum</li>
+<li><strong>Terminator:</strong> sequence that ends the message</li>
+</ul>
+<h2>Message Start Delimiter</h2>
+<p>This is the dollar symbol I mentioned in the example and the table with the structure above.</p>
+<p>It's the literal dollar <strong>$</strong> character <em>(ASCII value 0x24)</em>.</p>
+<p>So whenever you see this after a terminator sequence, it marks the beginning of a new sentence and the next part is the talker ID.</p>
+<h2>Talker ID</h2>
+<p>The device which is transmitting the data uses this to identify which constellation produced the sentence.</p>
+<p>In case you're unaware, GNSS uses satellites from different countries to get its location fix, and the collection of a country's satellites is called a <strong>constellation</strong>.</p>
+<p>These are the possible 2-character values for GNSS modules:</p>
+<ul>
+<li><strong>GP:</strong> GPS <em>(USA)</em></li>
+<li><strong>GL:</strong> GLONASS <em>(Russia)</em></li>
+<li><strong>GA:</strong> Galileo <em>(Europe)</em></li>
+<li><strong>GB:</strong> BeiDou <em>(China)</em></li>
+<li><strong>GQ:</strong> QZSS <em>(Japan)</em></li>
+<li><strong>GN:</strong> multi-constellation</li>
+</ul>
+<p>Generally multi-constellation is more reliable.</p>
+<h2>Sentence Type</h2>
+<p>This is the 3-character sequence which outlines what the following data field means.</p>
+<p>NMEA 0183 defines multiple standard sentence types, here is a list of the ones used by my uBLOX Max-M10S module:</p>
+<h3>DTM (Datum Reference)</h3>
+<p>One of the definitions of <em>'datum'</em> is &quot;A point, line, or surface used as a reference, as in surveying, mapping, or geology.&quot;</p>
+<p>GPS serves your location as a set of coordinates. Those coordinates need to be relative to something, just like with a graph in maths - if you don't know where (0,0) is, you can't plot the location of (1,1). Besides that, since the Earth is an ellipsoid <em>(not a perfect sphere)</em> and its geometry varies from continent to continent, it's sometimes better to use a local datum <em>(for the specific continent you'll be in)</em> in order to get a more accurate local ellipsoid, improving the accuracy for that specific region.</p>
+<p>There are a few common options, though the standard one is <strong>WGS84</strong>. It was designed to be a good global average, though for better precision you can use a local datum.</p>
+<p>Anyway, this message contains information about the datum in use and the reference datum.</p>
+<p>When you switch datums, there is a calculation you need to perform so you can get the right coordinates when you factor in the offset from switching datums, but for the project I'm working on I'm unsure if I yet need to do this, so I will not include that unless I come to the conclusion that I do.</p>
+<p>Sentence structure:</p>
+<p><code>$xxDTM,datum,subDatum,lat,NS,lon,EW,alt,refDatum*cs\r\n</code></p>
+<h3>GxQ</h3>
+<p><strong>This exact message implementation is proprietary to uBLOX modules. The <code>GxQ</code> messages are part of NMEA 0183, but the <code>EI</code> part is not.</strong></p>
+<p>This is a collection of 6 messages which are used to poll a <strong>specific</strong> constellation and receive location data from it at the next available opportunity:</p>
+<ul>
+<li><strong>GAQ:</strong> Galileo satellites</li>
+<li><strong>GBQ:</strong> BeiDou satellites</li>
+<li><strong>GLQ:</strong> GLONASS satellites</li>
+<li><strong>GNQ:</strong> multi-constellation satellites</li>
+<li><strong>GPQ:</strong> GPS satellites</li>
+<li><strong>GQQ:</strong> QZSS satellites</li>
+</ul>
+<p>The talker ID for this sentence is <code>EI</code> as outlined in the <a href="https://content.u-blox.com/sites/default/files/u-blox-M10-SPG-5.10_InterfaceDescription_UBX-21035062.pdf">uBLOX interface description document</a>, and you also need to include the kind of sentence you want to poll for.</p>
+<p>E.g. if you want to request the <strong>RMC</strong> message specifically from <strong>Galileo</strong> satellites, you'd send this over serial:</p>
+<p><code>$EIGAQ,RMC*2B\r\n</code></p>
+<p>Then, the GNSS transceiver will send the <code>$GARMC</code> message at its earliest convenience.</p>
+<h3>GLL</h3>
+<p>This is where the <em>&quot;real&quot;</em> location data lies. The GLL message contains data on:</p>
+<ul>
+<li>latitude</li>
+<li>longitude</li>
+<li>North/South and East/West indicator</li>
+<li>UTC time <em>(in hhmmss.ss format)</em></li>
+<li>positioning mode flag</li>
+</ul>
+<p>And a few other things, but the ones above are what you'd mostly care about.</p>
+<p>Those are mostly all clear, except the <strong>positioning mode flag</strong>, that one is a single ASCII character which indicates the validity of the rest of the data, and different letters can be used to mean the same thing across the different messages which integrate these flags.</p>
+<p>The <a href="https://gridconvertpro.com/blog/what-datum-does-gps-use.html">uBLOX interface description document</a> has a table with all of them.</p>
+<p>Sentence structure:</p>
+<p><code>$xxGLL,lat,NS,lon,EW,time,status,posMode*cs\r\n</code></p>
+<h3>GNS</h3>
+<p>GNS is almost like a superset of GLL - it still has the same lat/long, compass direction, and UTC time data, however it additionally introduces a few extra fields:</p>
+<ul>
+<li>amount of satellites used</li>
+<li>altitude <em>(above sea level)</em></li>
+<li>separate positioning mode flags for GPS, GLONASS, Galileo, and BeiDou</li>
+</ul>
+<p>Sentence structure:</p>
+<p><code>$xxGNS,time,lat,NS,lon,EW,posMode,numSV,HDOP,alt,sep,diffAge,diffStation,navStatus*cs\r\n</code></p>
+<h3>GGA</h3>
+<p>Think of it as GNS without the multi-constillation positioning mode stuff.</p>
+<p>In short, every single one of <strong>GLL</strong>, <strong>GNS</strong>, and <strong>GGA</strong> give you the location coordinates and UTC time alongside at least one flag <em>(GLL)</em>, while others also include things like DOP and amount of satellites <em>(GNS/GGA)</em>.</p>
+<p>Sentence structure:</p>
+<p><code>$xxGGA,time,lat,NS,lon,EW,quality,numSV,HDOP,alt,altUnit,sep,sepUnit,diffAge,diffStation*cs\r\n</code></p>
+<h3>RMC</h3>
+<p>This provides coordinate data just like the last 3 messages, but has a different use.</p>
+<p>While those focus on transmitting the data with clear flags on how <strong>quality</strong> it is, RMC focuses on the <strong>navigation</strong> by also including speed and course <em>(direction the module is actually moving in)</em>, but it lacks altitude measurements.</p>
+<p>Additionally, it includes the <strong>date</strong> - the last 3 messages only included UTC time, without the day, month, and year.</p>
+<p>Sentence structure:</p>
+<p><code>$xxRMC,time,status,lat,NS,lon,EW,spd,cog,date,mv,mvEW,posMode,navStatus*cs\r\n</code></p>
+<h3>TXT</h3>
+<p>These are just metadata from the GNSS module.</p>
+<p>Information like firmware version is presented here and can be useful for debugging.</p>
+<p>The only really useful one I've seen besides that is the <code>ANTSTATUS</code> one, which tells you if the antenna is okay or not - could be useful to go into some kind of distress or recovery mode when the antenna isn't ok.</p>
+<p>Sentence structure:</p>
+<p><code>$xxTXT,numMsg,msgNum,msgType,text*cs\r\n</code></p>
+<h2>Sources</h2>
+<p><a href="https://en.wikipedia.org/wiki/NMEA_0183">NMEA 0183 - Wikipedia</a>
+<a href="https://grokipedia.com/page/NMEA_0183">NMEA 0183 - Grokipedia</a>
+<a href="https://gnssmetrics.com/learn/protocols/nmea-0183/#structure">NMEA 0183 - GNSS Metrics</a>
+<a href="https://content.u-blox.com/sites/default/files/u-blox-M10-SPG-5.10_InterfaceDescription_UBX-21035062.pdf">Interface Description - uBLOX</a>
+<a href="https://gridconvertpro.com/blog/what-datum-does-gps-use.html">What Datum Does My GPS Use? WGS-84 Explained - GridConvertPro</a>
+<a href="https://en.wikipedia.org/wiki/Geodetic_datum">Geodetic Datum - Wikipedia</a></p>
+            </main>
+        </div>
+
+        <script src="../script.js"></script>
+    </body>
+</html>

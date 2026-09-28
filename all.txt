@@ -9,3 +9,5 @@ STM32 UART (Universal Asynchronous Receiver-Transmitter)@/articles/stm32_uart.ht
 STM32G0 LPUART (Low-Power UART) Bare-Metal No HAL@/articles/stm32g0_lpuart.html
 u-blox MAX-M10S Register-Level Usage Guide@/articles/ublox-max-m10s.html
 Building A Recovery Beacon For Model Rockets (Using LoRa)@/articles/model_rocket_recovery_beacon.html
+NMEA 0183 Protocol For GPS@/articles/nmea.html
+NMEA 0183 Protocol For uBLOX Modules@/articles/nmea.html
