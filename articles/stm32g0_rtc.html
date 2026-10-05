@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta http-equiv="X-UA-Compatible" content="ie=edge">
+        <title>STM32 RTC Explained - MicroPedia</title>
+        <link rel="stylesheet" href="../reset.css">
+        <link rel="stylesheet" href="../style.css">
+        <link rel="icon" href="../public/favicon.ico" type="image/x-icon">
+    </head>
+    <body>
+        <header>
+            <img alt="logo" src="../assets/ucpedia logo.png">
+            <form action="/search.html">
+                <input name="search" id="search" type="text" placeholder="Search articles"><!--
+                --><button id="search-button">search</button>
+            </form>
+        </header>
+
+        <div id="disclaimer" class="display-none">
+            <span class="exit" onClick="hide_disclaimer()">x</span>
+            <h3>SOME NOTES!</h3>
+            <ol>
+                <li>This website exclusively focuses on STM32 microcontrollers. If you are using something else, take this information with a grain of salt. If you are using something with a Cortex-M processor, there is still valuable information you can extract, though not every article will be applicable to a non-STM32 microcontroller.</li>
+                <li>I'm a university student and this site is my passive personal project. I collect my notes as I learn bare-metal embedded programming, then I tidy and upload them here. Being in the learning phase, there are likely a bunch of mistakes around the site. If you spot any, <a href="https://github.com/yani-again" target="_blank">please let me know!</a></li>
+            </ol>
+            <p>More information on the <a href="https://ucpedia.com/">main page!</a></p>
+        </div>
+
+        <span id="last-edited" style="display: none;">05 Oct 2026 at 21:33</span>
+        <div id="main">
+            <div id="contents">
+                <h4 class="underline">Contents</h4>
+                <div></div>
+            </div>
+
+            <main>
+<h1>STM32 RTC Explained</h1>
+<p>On STM32 microcontrollers, the Real-Time Clock <em>(RTC)</em> is hardware that is provided for the purposes of tracking time. More specifically, for tracking human-comprehensible time like <strong>seconds, minutes, hours.</strong></p>
+<p>If you want to track highly specific microsecond or even nanosecond intervals, STM32's <strong>timers</strong> are what you need - they count clock cycles so you can track some seriously small intervals.</p>
+<h2>Overview</h2>
+<p>Unlike timers <em>(which are made to be highly precise)</em>, the RTC is made to be <strong>available in low-power modes</strong> with a tradeoff: it is less precise and so is used for things that tolerate this lower precision.</p>
+<p>This means that the RTC is available in the various power modes: RUN, STOP, SUSPEND, STANDBY.</p>
+<p>Additionally, since the backup domain can remain powered by VBAT <em>(backup battery power supply)</em> even when VDD <em>(main power supply)</em> is gone, the RTC can even continue working during power outages <em>(both deliberate and unexpected)</em>.</p>
+<h2>Clock Sources</h2>
+<p>Inside of the <code>RCC_BDCR</code> register, you will find a 2-bit field called <code>RTCSEL</code> - that is how the RTC's clock source* is selected.</p>
+<p>From RM0444<sup>[1]</sup>, the 4 options are:</p>
+<ul>
+<li><strong>00:</strong> no clock selected</li>
+<li><strong>01:</strong> LSE</li>
+<li><strong>10:</strong> LSI</li>
+<li><strong>11:</strong> HSE/32</li>
+</ul>
+<p>The selection is important for a few reasons.</p>
+<p>Firstly, if you are writing code for a low-power application, you probably want to use a clock source that's already on instead of enabling and dedicating an entire clock source for the RTC.</p>
+<p>Secondly, the LSI is less precise than the other two, so you'd only use it for short-term time tracking as it'll become inaccurate significantly quicker.</p>
+<p>And thirdly, the three clocks are available in different power modes, with LSE being the only one available when VDD is absent.</p>
+<p>It's also worth factoring in that once written, these bits are unable to be changed until the RTC domain is reset, or a failure is detected on the LSE <em>(<code>LSECSSD</code> bit is set)</em>. If you do want to remove the selected clock and go back to option <strong>'00: no clock selected'</strong>, you can do that at any time by writing <code>BDRST</code> bit. Both of these mentioned bits are located in the same register.</p>
+<p>Once the clock source is selected, it's ran through two prescalers before it becomes the final kernel clock <em>(ck_spre)</em>. The crucial thing here is that the final kernel clock <strong>must</strong> be 1 Hz if you want the speed of the clock to be the same as your standard wall clock that tracks seconds, minutes, hours. Any faster or slower than 1 Hz and the RTC will track time faster/slower at the same rate <em>(e.g. a 2 Hz clock will make 1 real-life second be counted as 2 seconds in RTC time)</em>.</p>
+<p>Here's the formula for the kernel clock:</p>
+<pre><code>ck_spre = RTCCLK / ((PREDIV_A + 1) * (PREDIV_S + 1))
+</code></pre>
+<p><em>* Note this is the kernel clock, NOT the peripheral clock. The RCC article has more info on the difference between these two, but in short, the peripheral clock controls access to registers, whereas the kernel clock controls the actual functionality of the peripheral. In the case of RTC, the main functionality is keeping track of time.</em></p>
+<h2>RTC Registers</h2>
+<p>Once you have the RTC running, the way you see the time is through registers:</p>
+<ul>
+<li><code>RTC_TR</code>: time register, shows the time <em>(hours/minutes/seconds in BCD format, and an AM/PM bit)</em></li>
+<li><code>RTC_DR</code>: date register, shows date <em>(year/month/weekday/day in BCD format)</em></li>
+<li><code>RTC_SSR</code>: sub-second register, see description and formula below</li>
+<li><code>RTC_CR</code>: control register, lets you control various aspects of the RTC that this article covers</li>
+</ul>
+<h3>Sub-Second Register</h3>
+<p>As the name implies, this involves subseconds.</p>
+<p>It works by counting down from <code>PREDIV_S</code> <em>(one of the two prescalers)</em> to 0, so a fractional second is obtained with this formula:</p>
+<pre><code>Second fraction = (PREDIV_S - SS) / (PREDIV_S + 1)
+</code></pre>
+<h2>Shadow Registers</h2>
+<p>You might be wondering what happens if you read the time from the <strong>TR</strong> register at 23:59:59, the RTC ticks over to the next date, and then you read the date from the <strong>DR</strong> register.</p>
+<p>Logically, you think you would read 23:59:59 on the current date, then read tomorrow's date as we tick over into the next day, making the code believe it's a whole day ahead.</p>
+<p>However, this doesn't happen <strong>as long as you access the registers in the right order</strong>.</p>
+<p>You see, the <strong>TR, DR,</strong> and <strong>SSR</strong> are updated through shadow registers which are synchronised to the RTC every 2 <strong>RTCCLK</strong> clock cycles.</p>
+<p>Since the 3 aforementioned registers aren't directly synced to the RTC, it allowed the hardware designers to do one thing: <em>when the TR register is read, DR and SSR become locked and are not updated until DR is read.</em></p>
+<p>This means they will always be synced as long as TR is read first, and DR last <em>(you may or may not read SSR, that is up to you as the developer)</em>.</p>
+<p>It is possible to bypass the shadow registers and read from the calendar directly, meaning you lose the ability to lock DR/SSR after a TR read and risk a rollover, but there is probably a scenario where it is useful. The bypass can be achieved by setting the <code>BYPSHAD</code> bit in <code>RTC_CR</code>.</p>
+<h2>Write Protections</h2>
+<p>By default, the RTC registers are protected from write accesses in 2 ways.</p>
+<p>Firstly, the entire backup domain <em>(that means the RTC and backup registers)</em> is write-protected after a reset and can only be enabled by setting the <code>DBP</code> to 1 in the <code>PWR_CR1</code> control register.</p>
+<p>The second way is with the <code>RTC_WPR</code> register: writing the correct sequence to it enables writes to the other RTC registers. The sequence is:</p>
+<ol>
+<li>Write 0xCA to the <code>RTC_WPR</code> register</li>
+<li>Write 0x53 to the <code>RTC_WPR</code> register</li>
+</ol>
+<p>Note that <strong>BOTH</strong> of these need to be met to enable writes to the RTC, and since the RTC is write-protected <em>(including the <code>RTC_WPR</code> register)</em> until <code>DBP</code> is set, that means <code>DBP</code> must be set <strong>first</strong>, then the correct sequence is to be written in <code>RTC_WPR</code>.</p>
+<h3>Init Mode</h3>
+<p>To give the RTC an initial time reference <em>(so it starts from a date/time we want it to)</em>, it <strong>IS</strong> as easy as just writing it into the <code>RTC_TR</code>/<code>RTC_DR</code> registers, <strong>however</strong> it must happen in something called &quot;init mode&quot;.</p>
+<p>When init mode is entered, the RTC calendar is stopped and thus the TR/DR registers are not updated, allowing writes into them.</p>
+<p>To enter init mode:</p>
+<ol>
+<li>Set the <code>INIT</code> bit in the <code>RTC_CR</code> control register</li>
+<li>Poll the <code>INITF</code> bit in the <code>RTC_ICSR</code> register</li>
+<li>When <code>INITF</code> is automatically set by hardware, init mode has been entered</li>
+<li>Clear the <code>INITF</code> bit when done to exit init mode</li>
+</ol>
+<p>It takes about 2 RTCCLK clock cycles for <code>INITF</code> to be set due to synchronisation.</p>
+<h2>Daylight Savings</h2>
+<p>TODO: finish this section</p>
+<h2>Sources</h2>
+<p><a href="https://www.st.com/resource/en/reference_manual/rm0444-stm32g0x1-advanced-armbased-32bit-mcus-stmicroelectronics.pdf">1. STMicroelectronics - RM0444</a></p>
+            </main>
+        </div>
+
+        <script src="../script.js"></script>
+    </body>
+</html>
