@@ -1,3 +1,3 @@
+STM32 RTC Explained@/articles/stm32g0_rtc.html
 NMEA 0183 Protocol For uBLOX Modules@/articles/nmea.html
 Building A Recovery Beacon For Model Rockets (Using LoRa)@/articles/model_rocket_recovery_beacon.html
-STM32G0 LPUART Bare-Metal (No HAL)@/articles/stm32g0_lpuart.html
