@@ -28,7 +28,7 @@
             <p>More information on the <a href="https://ucpedia.com/">main page!</a></p>
         </div>
 
-        <span id="last-edited" style="display: none;">05 Oct 2026 at 21:33</span>
+        <span id="last-edited" style="display: none;">06 Oct 2026 at 21:35</span>
         <div id="main">
             <div id="contents">
                 <h4 class="underline">Contents</h4>
@@ -44,7 +44,7 @@
 <p>This means that the RTC is available in the various power modes: RUN, STOP, SUSPEND, STANDBY.</p>
 <p>Additionally, since the backup domain can remain powered by VBAT <em>(backup battery power supply)</em> even when VDD <em>(main power supply)</em> is gone, the RTC can even continue working during power outages <em>(both deliberate and unexpected)</em>.</p>
 <h2>Clock Sources</h2>
-<p>Inside of the <code>RCC_BDCR</code> register, you will find a 2-bit field called <code>RTCSEL</code> - that is how the RTC's clock source* is selected.</p>
+<p>Inside of the <code>RCC_BDCR</code> register, you will find a 2-bit field called <code>RTCSEL</code> - that is how the RTC's clock source* is selected**.</p>
 <p>From RM0444<sup>[1]</sup>, the 4 options are:</p>
 <ul>
 <li><strong>00:</strong> no clock selected</li>
@@ -62,6 +62,7 @@
 <pre><code>ck_spre = RTCCLK / ((PREDIV_A + 1) * (PREDIV_S + 1))
 </code></pre>
 <p><em>* Note this is the kernel clock, NOT the peripheral clock. The RCC article has more info on the difference between these two, but in short, the peripheral clock controls access to registers, whereas the kernel clock controls the actual functionality of the peripheral. In the case of RTC, the main functionality is keeping track of time.</em></p>
+<p>*** Furthermore, note that there are other relevant bits to the RTC, namely the <code>LSEON</code>, <code>LSERDY</code>, and <code>RTCEN</code> that involve the LSE oscillator's functionality and the enabling of the RTC peripheral.</p>
 <h2>RTC Registers</h2>
 <p>Once you have the RTC running, the way you see the time is through registers:</p>
 <ul>
@@ -104,7 +105,34 @@
 </ol>
 <p>It takes about 2 RTCCLK clock cycles for <code>INITF</code> to be set due to synchronisation.</p>
 <h2>Daylight Savings</h2>
-<p>TODO: finish this section</p>
+<p>Since daylight savings are predictable in when they happen, you can use the <code>SUB1H</code> and <code>ADD1H</code> bits inside of the <code>RTC_CR</code> register to reflect what time the calendar should show.</p>
+<p>In order to check if your code has made this change, the <code>RTC_CR</code> register also offers a <code>BKP</code> bit, which has no effect on anything, it's just a mark for you to note down a boolean value whenever you perform the addition/subtraction of an hour. It's useful because variables live in <strong>SRAM</strong>, and SRAM doesn't survive system resets, power loss, and STANDBY/SHUTDOWN modes, unlike the <strong>backup SRAM</strong>, where this register lives.</p>
+<h2>Alarms</h2>
+<p>Just like the alarm you use to wake up at 7:00 AM every day, the STM32's RTC alarm offers you the ability to trigger an interrupt at specific, user-defined times.</p>
+<p>The STM32G031K8 <em>(what I'm using for this article)</em> comes with 2 alarms, simply called <strong>alarm A</strong> and <strong>alarm B</strong>.</p>
+<p>Alarms can be enabled within the <code>RTC_CR</code> control register through its respective <code>ALRxE</code> bit.</p>
+<p>To set the actual time at which an alarm should 'ring' <em>(be activated)</em>, you need to set the time, date, or both, within the <code>RTC_ALRMxR</code> register through values and masks, and if you want sub-seconds then the values inside the <code>RTC_ALRMxSSR</code> register.</p>
+<p>Once the alarm activates, this means the time you wanted to check for has arrived, and you know it when the <code>ALRxF</code>* bit is set in the <code>RTC_SR</code> status register.</p>
+<p>If you want this to generate an interrupt to avoid a blocking <code>while</code> loop, the interrupt generation can be enabled through the <code>ALRxIE</code> bit inside <code>RTC_CR</code>. There is also a masked interrupt register, <code>RTC_MISR</code>, where the flags for which interrupt has fired are <strong>ONLY</strong> set if the interrupt is enabled, which is useful for the ISR.</p>
+<p><em>* This bit is cleared by writing 1 to the <code>CALRxF</code> bit within the <code>RTC_SCR</code> register.</em></p>
+<h3>Alarm Write Access</h3>
+<p>Just like with everything in the RTC and backup domain, there is some level of write protection.</p>
+<p>In order to change the values associated with the respective alarm, it has to be turned <strong>off</strong>. Once you clear the correct <code>ALRxE</code> bit, you need to poll for when the hardware automatically sets the <code>ALRxBWF</code> bit inside the <code>RTC_ICSR</code> status register, and after that you can change the alarm's values.</p>
+<h2>Timestamps</h2>
+<p>This is a way for the MCU to save the calendar date &amp; time upon certain things occuring, as a way of logging properly <em>(that means including the time)</em>.</p>
+<p>Timestamping can be enabled in 1 of 3 ways*, each triggering a timestamp event in different ways:</p>
+<ol>
+<li><strong>when <code>TSE</code> is set:</strong> triggered when a timestamp event is detected on the RTC_TS pin</li>
+<li><strong>when <code>TAMPTS</code> is set:</strong> triggered when a tamper event is detected on the TAMP_INx pin</li>
+<li><strong>when <code>ITSE</code> is set:</strong> triggered when an internal timestamp is detected - this is generated upon the switching of the power supply to VBAT</li>
+</ol>
+<p><em>* Note that for all 3  ways, their respective bit lives in <code>RTC_CR</code>.</em></p>
+<h2>Other Important Notes</h2>
+<ul>
+<li>Since the RTC is preserved across system resets, your code should check if it's already configured and running to avoid unnecessary <em>(and potentially harmful)</em> reconfigurations on every reset.</li>
+<li>Since SRAM doesn't survive events like system reset, power loss, and some low-power modes <em>(unlike the backup SRAM)</em>, the backup SRAM offers some registers to store values in, which is where you can store a bool for <em>&quot;I already initialised the RTC, dont' do it again&quot;</em>.</li>
+</ul>
+<p><em>Also, if you're wondering why this article's sources are so short compared to usual, that's because I tried using Claude to aid and teach me most of the material for the first time. I think this method worked better than usual as I wrote this article faster than I otherwise would have by scanning through 5+ different sources. Of course, I still checked the important stuff against the reference manual!</em></p>
 <h2>Sources</h2>
 <p><a href="https://www.st.com/resource/en/reference_manual/rm0444-stm32g0x1-advanced-armbased-32bit-mcus-stmicroelectronics.pdf">1. STMicroelectronics - RM0444</a></p>
             </main>
