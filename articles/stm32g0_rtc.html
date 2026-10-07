@@ -28,7 +28,7 @@
             <p>More information on the <a href="https://ucpedia.com/">main page!</a></p>
         </div>
 
-        <span id="last-edited" style="display: none;">06 Oct 2026 at 21:35</span>
+        <span id="last-edited" style="display: none;">07 Oct 2026 at 20:59</span>
         <div id="main">
             <div id="contents">
                 <h4 class="underline">Contents</h4>
@@ -127,6 +127,9 @@
 <li><strong>when <code>ITSE</code> is set:</strong> triggered when an internal timestamp is detected - this is generated upon the switching of the power supply to VBAT</li>
 </ol>
 <p><em>* Note that for all 3  ways, their respective bit lives in <code>RTC_CR</code>.</em></p>
+<h2>RTC And EXTI</h2>
+<p>Various RTC events like alarms, wakeup timer <em>(not available on all STM32's)</em>, and timestamp are routed through EXTI lines, which allows the MCU to be woken up from low-power modes when the event is triggered.</p>
+<p>More info on EXTI in its respective article.</p>
 <h2>Other Important Notes</h2>
 <ul>
 <li>Since the RTC is preserved across system resets, your code should check if it's already configured and running to avoid unnecessary <em>(and potentially harmful)</em> reconfigurations on every reset.</li>
