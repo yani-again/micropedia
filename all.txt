@@ -12,3 +12,4 @@ Building A Recovery Beacon For Model Rockets (Using LoRa)@/articles/model_rocket
 NMEA 0183 Protocol For GPS@/articles/nmea.html
 NMEA 0183 Protocol For uBLOX Modules@/articles/nmea.html
 STM32 RTC Explained@/articles/stm32g0_rtc.html
+STM32 EXTI@/articles/stm32_exti.html

@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta http-equiv="X-UA-Compatible" content="ie=edge">
+        <title>STM32 EXTI - MicroPedia</title>
+        <link rel="stylesheet" href="../reset.css">
+        <link rel="stylesheet" href="../style.css">
+        <link rel="icon" href="../public/favicon.ico" type="image/x-icon">
+    </head>
+    <body>
+        <header>
+            <img alt="logo" src="../assets/ucpedia logo.png">
+            <form action="/search.html">
+                <input name="search" id="search" type="text" placeholder="Search articles"><!--
+                --><button id="search-button">search</button>
+            </form>
+        </header>
+
+        <div id="disclaimer" class="display-none">
+            <span class="exit" onClick="hide_disclaimer()">x</span>
+            <h3>SOME NOTES!</h3>
+            <ol>
+                <li>This website exclusively focuses on STM32 microcontrollers. If you are using something else, take this information with a grain of salt. If you are using something with a Cortex-M processor, there is still valuable information you can extract, though not every article will be applicable to a non-STM32 microcontroller.</li>
+                <li>I'm a university student and this site is my passive personal project. I collect my notes as I learn bare-metal embedded programming, then I tidy and upload them here. Being in the learning phase, there are likely a bunch of mistakes around the site. If you spot any, <a href="https://github.com/yani-again" target="_blank">please let me know!</a></li>
+            </ol>
+            <p>More information on the <a href="https://ucpedia.com/">main page!</a></p>
+        </div>
+
+        <span id="last-edited" style="display: none;">07 Oct 2026 at 22:27</span>
+        <div id="main">
+            <div id="contents">
+                <h4 class="underline">Contents</h4>
+                <div></div>
+            </div>
+
+            <main>
+<h1>STM32 EXTI (External Interrupts And Events Controller)</h1>
+<p>The standard interrupts that come with an STM32 can feel limiting; sometimes you want to turn a certain external event into an interrupt, that way you know when it happened without entering a blocking <code>while</code> loop and holding the entire CPU up.</p>
+<p>Well, as luck would have it, that's exactly what the <strong>STM32 EXTI</strong> is for!</p>
+<h2>EXTI Overview</h2>
+<p>For the most part, the EXTI block can look at GPIO pin edges and generate an interrupt or event upon a change <em>(you as the programmer can decide which edge to watch)</em>.</p>
+<p>However, wake-up signals can also be used from other peripherals such as the RTC, UART, PVD...</p>
+<p>Take a look at the block diagram below from the STM32G0, you can see how the EXTI block <em>(gray area)</em> sits between the peripheral which generates the event and the GPIO itself.</p>
+<p><a href="./assets/figure_26-exti_block_diagram.png">Figure 26 - EXTI block diagram</a></p>
+<p>I've done enough hinting already, think of the EXTI as having 3 main purposes:</p>
+<ol>
+<li>Detecting GPIO signal edges</li>
+<li>Routing which GPIO port drives which EXTI line</li>
+<li>Waking up from low-power modes</li>
+</ol>
+<p>**Note that this article is written using the Nucleo-STM32G031K8 as the main MCU and thus uses its reference manual<sup>[1]</sup>. Register names and some implementation details may vary across different STM32s.</p>
+<h3>EXTI Lines</h3>
+<p>Each EXTI line is an independent input, with there being 2 kinds of line:</p>
+<ul>
+<li><strong>configurable lines:</strong> GPIO-connected lines labelled EXTI0-15 <em>(yes there are 16 of them)</em></li>
+<li><strong>direct lines:</strong> directly from peripheral wake-up sources <em>(e.g. UART, I2C, RTC)</em></li>
+</ul>
+<h2>Sources</h2>
+<p><a href="https://www.st.com/resource/en/reference_manual/rm0444-stm32g0x1-advanced-armbased-32bit-mcus-stmicroelectronics.pdf">1. STMicroelectronics - RM0444</a></p>
+            </main>
+        </div>
+
+        <script src="../script.js"></script>
+    </body>
+</html>
