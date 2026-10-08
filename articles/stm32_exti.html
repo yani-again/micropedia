@@ -28,7 +28,7 @@
             <p>More information on the <a href="https://ucpedia.com/">main page!</a></p>
         </div>
 
-        <span id="last-edited" style="display: none;">07 Oct 2026 at 22:27</span>
+        <span id="last-edited" style="display: none;">08 Oct 2026 at 22:01</span>
         <div id="main">
             <div id="contents">
                 <h4 class="underline">Contents</h4>
@@ -51,12 +51,28 @@
 <li>Waking up from low-power modes</li>
 </ol>
 <p>**Note that this article is written using the Nucleo-STM32G031K8 as the main MCU and thus uses its reference manual<sup>[1]</sup>. Register names and some implementation details may vary across different STM32s.</p>
-<h3>EXTI Lines</h3>
+<h2>EXTI Lines</h2>
 <p>Each EXTI line is an independent input, with there being 2 kinds of line:</p>
 <ul>
 <li><strong>configurable lines:</strong> GPIO-connected lines labelled EXTI0-15 <em>(yes there are 16 of them)</em></li>
 <li><strong>direct lines:</strong> directly from peripheral wake-up sources <em>(e.g. UART, I2C, RTC)</em></li>
 </ul>
+<h3>GPIO-Mapped Lines</h3>
+<p>Each GPIO port has a maximum of 16 pins, which is why the EXTI also has 16 GPIO-connected lines.</p>
+<p>An EXTI line <em>(e.g. EXTI4)</em> maps to <strong>one</strong> GPIO port at the <strong>same</strong> number <em>(for EXTI4, that can be any one of PA4, PB4, PC4...)</em>.</p>
+<p>On the STM32G0, this is configured inside the <code>EXTI_EXTICRx</code> registers.</p>
+<h2>Relevant Registers</h2>
+<p>| Register | Purpose |
+| -------- | ------- |
+| <code>EXTI_RTSRx</code> | Enable trigger on rising edge detection |
+| <code>EXTI_FTSRx</code> | Enable trigger on falling edge detection |
+| <code>EXTI_IMRx</code> | Interrupt mask <em>(setting 1 = interrupt can trigger)</em> |
+| <code>EXTI_EMRx</code> | Event mask <em>(setting 1 = event can trigger)</em> |
+| <code>EXTI_SWIERx</code> | Software interrupt, fakes an edge to trigger interrupts |
+| <code>EXTI_RPRx</code> | Rising edge <strong>pending</strong> flags* |
+| <code>EXTI_FPRx</code> | Falling edge <strong>pending</strong> flags* |
+| <code>EXTI_EXTICRx</code> | GPIO port selection |</p>
+<p><em>* These can be used in the ISR to figure out which line and edge triggered the interrupt. Don't forget to clear!</em></p>
 <h2>Sources</h2>
 <p><a href="https://www.st.com/resource/en/reference_manual/rm0444-stm32g0x1-advanced-armbased-32bit-mcus-stmicroelectronics.pdf">1. STMicroelectronics - RM0444</a></p>
             </main>
