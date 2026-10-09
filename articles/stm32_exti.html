@@ -4,7 +4,7 @@
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <meta http-equiv="X-UA-Compatible" content="ie=edge">
-        <title>STM32 EXTI - MicroPedia</title>
+        <title>STM32 EXTI (External Interrupts And Events Controller) - MicroPedia</title>
         <link rel="stylesheet" href="../reset.css">
         <link rel="stylesheet" href="../style.css">
         <link rel="icon" href="../public/favicon.ico" type="image/x-icon">
@@ -28,7 +28,7 @@
             <p>More information on the <a href="https://ucpedia.com/">main page!</a></p>
         </div>
 
-        <span id="last-edited" style="display: none;">08 Oct 2026 at 22:01</span>
+        <span id="last-edited" style="display: none;">09 Oct 2026 at 22:24</span>
         <div id="main">
             <div id="contents">
                 <h4 class="underline">Contents</h4>
@@ -61,6 +61,13 @@
 <p>Each GPIO port has a maximum of 16 pins, which is why the EXTI also has 16 GPIO-connected lines.</p>
 <p>An EXTI line <em>(e.g. EXTI4)</em> maps to <strong>one</strong> GPIO port at the <strong>same</strong> number <em>(for EXTI4, that can be any one of PA4, PB4, PC4...)</em>.</p>
 <p>On the STM32G0, this is configured inside the <code>EXTI_EXTICRx</code> registers.</p>
+<h2>Interrupts And Events</h2>
+<p>Depending on the configuration, an EXTI trigger can either result in an interrupt or event.</p>
+<p>In case you're not familiar, an interrupt is a signal for the CPU to immediately <em>(or as soon as possible)</em> begin execution of a specific piece of code to handle the interrupt. An event is like a 'silent' version of an interrupt - it is mostly used to wake the MCU up from <code>WFE</code>.</p>
+<p>The way you enable them is inside the <code>EXTI_IMRx</code>/<code>EXTI_EMRx</code> registers, where setting 1 to a bit allows that line to trigger its interrupt/event. <strong>Note that this isn't the only thing you need to do, it's just the 'last gate' that allows the enabling.</strong></p>
+<h3>NVIC Warning</h3>
+<p>Here's a snippet from the STM32G0's vector table - notice how different EXTI lines are tied to the same vector?</p>
+<p>This means you must check which line has the pending flags before handling anything, otherwise you may handle an interrupt that never actually fired.</p>
 <h2>Relevant Registers</h2>
 <p>| Register | Purpose |
 | -------- | ------- |

@@ -13,3 +13,4 @@ NMEA 0183 Protocol For GPS@/articles/nmea.html
 NMEA 0183 Protocol For uBLOX Modules@/articles/nmea.html
 STM32 RTC Explained@/articles/stm32g0_rtc.html
 STM32 EXTI@/articles/stm32_exti.html
+STM32 EXTI (External Interrupts And Events Controller)@/articles/stm32_exti.html
